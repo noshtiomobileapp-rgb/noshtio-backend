@@ -1,0 +1,20 @@
+{
+  "info": {
+    "name": "Restaurant Backend Collection",
+    "_postman_id": "rest-collection-001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{ \"email\": \"test@example.com\", \"password\": \"1234\" }"
+        }
+      }
+    }
+  ]
+}
