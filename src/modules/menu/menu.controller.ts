@@ -174,11 +174,11 @@ export const getMenu = async (req: Request, res: Response) => {
 };
 
 /* ============================================================
-   5. COMMIT APPROVED MENU (STEP 4 → STEP 5 LOCK)
+   5. COMMIT APPROVED MENU (FINAL — DEBUG REMOVED)
    ============================================================ */
 export const commitMenu = async (req: Request, res: Response) => {
   try {
-    // 🔒 STEP 5 — Enforce API contract (NO MANUAL VALIDATION)
+    // 🔒 STEP 5 — Enforce API contract (LOCKED)
     CommitPayloadSchema.parse(req.body);
 
     const { restaurantId, mapping } = req.body;
