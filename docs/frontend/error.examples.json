@@ -1,0 +1,11 @@
+{
+  "400": {
+    "error": "Invalid payload structure"
+  },
+  "409": {
+    "error": "Duplicate category detected"
+  },
+  "500": {
+    "error": "Menu commit failed"
+  }
+}

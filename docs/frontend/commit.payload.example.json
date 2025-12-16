@@ -1,0 +1,15 @@
+{
+  "restaurantId": "64abc123restaurant",
+  "mapping": [
+    {
+      "category": "Starters",
+      "items": [
+        {
+          "name": "Paneer Tikka",
+          "price": 220,
+          "matchedItemId": null
+        }
+      ]
+    }
+  ]
+}
