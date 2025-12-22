@@ -7,15 +7,26 @@ import {
   cancelOrderHandler,
 } from "./order.controller";
 
-import authMiddleware from "../../middleware/auth.middleware";
+import authMiddleware, {
+  optionalAuth,
+} from "../../middleware/auth.middleware";
 import roleMiddleware from "../../middleware/role.middleware";
 
 const router = express.Router();
 
-router.post("/", authMiddleware, createOrderHandler);
-router.get("/", authMiddleware, listOrdersHandler);
-router.get("/:id", authMiddleware, getOrderHandler);
+/**
+ * Customer Order APIs
+ * Mounted at: /api/customer/orders
+ */
 
+// ✅ GUEST + LOGGED-IN
+router.post("/", optionalAuth, createOrderHandler);
+router.get("/:id", optionalAuth, getOrderHandler);
+
+// ✅ LOGGED-IN ONLY
+router.get("/", authMiddleware, listOrdersHandler);
+
+// ✅ STAFF / ADMIN
 router.patch(
   "/:id/status",
   authMiddleware,

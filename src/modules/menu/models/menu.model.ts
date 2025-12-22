@@ -1,4 +1,9 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
+/**
+ * 🔒 LOCKED — Backend v1.0
+ * Menu snapshot schema is frozen (audit only).
+ * DO NOT mutate committed records.
+ */
 
 export interface IMenuItem {
   name: string;

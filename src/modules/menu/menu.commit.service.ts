@@ -1,118 +1,96 @@
-import { Types } from "mongoose";
+// src/modules/menu/menu.commit.service.ts
+import mongoose, { Types } from "mongoose";
+import Item from "./item.model";
+import MenuDraftSnapshot from "./menu.snapshot.model";
 import { Category } from "./models/category.model";
-import Item, { IItem } from "./models/item.model";
 
-export interface ApprovedItemInput {
-  name: string;
-  price?: number | null;
-  matchedItemId?: string | null;
-}
+const normalize = (v: string) => v.trim().toLowerCase();
 
-export interface ApprovedCategoryInput {
-  category: string;
-  items: ApprovedItemInput[];
-}
+class MenuCommitService {
+  async commitMapping({
+    restaurantId,
+    snapshotId,
+    committedBy,
+  }: {
+    restaurantId: string;
+    snapshotId: string;
+    committedBy: string;
+  }) {
+    const session = await mongoose.startSession();
+    let itemsCreated = 0;
+    let itemsUpdated = 0;
 
-export interface CommitPayload {
-  restaurantId: string | Types.ObjectId;
-  mapping: ApprovedCategoryInput[];
-}
+    try {
+      session.startTransaction();
 
-export class MenuCommitService {
-  async upsertCategory(
-    restaurantId: string | Types.ObjectId,
-    categoryName: string
-  ) {
-    const normalized = categoryName.trim().toLowerCase();
+      const snapshot = await MenuDraftSnapshot.findById(snapshotId).session(
+        session
+      );
+      if (!snapshot) throw new Error("Snapshot not found");
 
-    const existing = await Category.findOne({
-      restaurantId,
-      name: { $regex: new RegExp("^" + normalized + "$", "i") },
-    });
+      const rid = new Types.ObjectId(restaurantId);
 
-    if (existing) return existing;
+      const categories = await Category.find({
+        restaurantId: rid,
+        isVisible: true,
+      }).session(session);
 
-    return await Category.create({
-      restaurantId,
-      name: categoryName.trim(),
-    });
-  }
+      const categoryByName = new Map(
+        categories.map((c) => [normalize(c.name), c])
+      );
 
-  async upsertItem(
-    restaurantId: string | Types.ObjectId,
-    categoryId: Types.ObjectId,
-    item: ApprovedItemInput
-  ) {
-    if (item.matchedItemId) {
-      const existing = await Item.findOne({
-        _id: item.matchedItemId,
-        restaurantId,
-      });
+      for (const cat of snapshot.mapping as any[]) {
+        const category = categoryByName.get(normalize(cat.category));
+        if (!category) continue;
 
-      if (existing) {
-        existing.price = item.price ?? existing.price;
-        existing.categoryId = categoryId;
-        return await existing.save();
-      }
-    }
+        for (const item of cat.items) {
+          const normalizedName = normalize(item.name);
+          const available =
+            typeof item.available === "boolean" ? item.available : true;
 
-    const normalized = item.name.trim().toLowerCase();
+          const existing = await Item.findOne({
+            restaurantId: rid,
+            normalizedName,
+          }).session(session);
 
-    let existingByName = await Item.findOne({
-      restaurantId,
-      name: { $regex: new RegExp("^" + normalized + "$", "i") },
-    });
-
-    if (existingByName) {
-      existingByName.price = item.price ?? existingByName.price;
-      existingByName.categoryId = categoryId;
-      return await existingByName.save();
-    }
-
-    return await Item.create({
-      restaurantId,
-      categoryId,
-      name: item.name.trim(),
-      price: item.price ?? null,
-    });
-  }
-
-  async commitMapping(payload: CommitPayload) {
-    const restaurantId = new Types.ObjectId(payload.restaurantId);
-
-    const finalCategories: any[] = [];
-
-    for (const cat of payload.mapping) {
-      const categoryDoc = await this.upsertCategory(restaurantId, cat.category);
-
-      const savedItems: any[] = [];
-
-      for (const item of cat.items) {
-        const savedItem = await this.upsertItem(
-          restaurantId,
-          categoryDoc._id,
-          item
-        );
-
-        savedItems.push({
-          _id: savedItem._id,
-          name: savedItem.name,
-          price: savedItem.price,
-        });
+          if (existing) {
+            existing.price = item.price;
+            existing.available = available;
+            existing.categoryId = category._id;
+            await existing.save({ session });
+            itemsUpdated++;
+          } else {
+            await Item.create(
+              [
+                {
+                  restaurantId: rid,
+                  categoryId: category._id,
+                  name: item.name,
+                  normalizedName,
+                  price: item.price,
+                  available,
+                  source: "ocr",
+                },
+              ],
+              { session }
+            );
+            itemsCreated++;
+          }
+        }
       }
 
-      finalCategories.push({
-        _id: categoryDoc._id,
-        name: categoryDoc.name,
-        items: savedItems,
-      });
-    }
+      snapshot.committedAt = new Date();
+      snapshot.committedBy = committedBy;
+      await snapshot.save({ session });
 
-    return {
-      restaurantId,
-      categories: finalCategories,
-      message: "Mapping committed successfully",
-    };
+      await session.commitTransaction();
+      return { itemsCreated, itemsUpdated };
+    } catch (e) {
+      await session.abortTransaction();
+      throw e;
+    } finally {
+      session.endSession();
+    }
   }
 }
 

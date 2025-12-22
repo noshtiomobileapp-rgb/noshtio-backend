@@ -1,14 +1,22 @@
 /* --------------------------------------------------------------------------
  * src/modules/menu/menu.parser.ts
  * --------------------------------------------------------------------------
- * A robust menu parser with:
- *  - strict parse: only clear price+item lines
- *  - smart parse: heuristics for multi-line items, descriptions, category detection
- *  - OCR-friendly text normalization
- * Returns:
- *    { strict: MenuShape, smart: MenuShape }
- *    parseTextToMenu(rawText) → MenuShape (smart preferred)
+ * Robust OCR menu parser with:
+ *  - strict parse
+ *  - smart parse
+ *  - heuristics
+ *  - junk filtering
+ *
+ * PLUS (STEP 3):
+ *  - hardening layer
+ *  - category deduplication
+ *  - garbage removal
+ *  - frontend-safe output
  * -------------------------------------------------------------------------- */
+
+/* ============================================================
+   Internal Types (UNCHANGED)
+   ============================================================ */
 
 type MenuItem = {
   name: string;
@@ -27,7 +35,19 @@ type MenuShape = {
 };
 
 /* ============================================================
-   1. Normalization helpers
+   STEP-3 OUTPUT TYPE (FRONTEND SAFE)
+   ============================================================ */
+
+export type ParsedMenuCategory = {
+  category: string;
+  items: {
+    name: string;
+    price: number | null;
+  }[];
+};
+
+/* ============================================================
+   Normalization helpers (existing)
    ============================================================ */
 
 const CATEGORY_KEYWORDS = [
@@ -98,7 +118,7 @@ function getLines(raw: string): string[] {
 }
 
 /* ============================================================
-   2. STRICT PARSER
+   STRICT PARSER (UNCHANGED)
    ============================================================ */
 
 function strictParse(rawText: string): MenuShape {
@@ -123,12 +143,12 @@ function strictParse(rawText: string): MenuShape {
   }
 
   return {
-    categories: categories.filter(c => c.items.length > 0)
+    categories: categories.filter(c => c.items.length > 0),
   };
 }
 
 /* ============================================================
-   3. SMART PARSER
+   SMART PARSER (UNCHANGED)
    ============================================================ */
 
 function smartParse(rawText: string): MenuShape {
@@ -141,14 +161,12 @@ function smartParse(rawText: string): MenuShape {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Detect category
     if (isCategoryLine(line)) {
       current = { name: line, items: [] };
       categories.push(current);
       continue;
     }
 
-    // Price on same line
     const price = extractPrice(line);
     if (price !== null) {
       const name = removePricePart(line);
@@ -156,19 +174,21 @@ function smartParse(rawText: string): MenuShape {
       continue;
     }
 
-    // Price on next line
     const next = lines[i + 1];
     if (next) {
       const nextPrice = extractPrice(next);
       if (nextPrice !== null) {
         const name = `${line} ${removePricePart(next)}`.trim();
-        current.items.push({ name, price: nextPrice, raw: line + " " + next });
+        current.items.push({
+          name,
+          price: nextPrice,
+          raw: line + " " + next,
+        });
         i++;
         continue;
       }
     }
 
-    // Multi-line description support
     const last = current.items[current.items.length - 1];
     if (last) {
       last.description = last.description
@@ -177,44 +197,61 @@ function smartParse(rawText: string): MenuShape {
       continue;
     }
 
-    // Item with no price
     current.items.push({ name: line, price: null, raw: line });
   }
 
-  // Cleanup categories
-  const cleaned = categories
-    .map(cat => ({
-      name: cat.name,
-      items: cat.items
-        .map(it => ({
-          ...it,
-          name: it.name.trim(),
-          description: it.description?.trim(),
-        }))
-        .filter(it => it.name.length > 0),
-    }))
-    .filter(cat => cat.items.length > 0);
-
-  return { categories: cleaned.length ? cleaned : [{ name: "Menu", items: [] }] };
+  return {
+    categories: categories.filter(c => c.items.length > 0),
+  };
 }
 
 /* ============================================================
-   4. PUBLIC EXPORT
+   STEP-3 HARDENING LAYER (NEW)
+   ============================================================ */
+
+function isValidItemName(name: string): boolean {
+  const cleaned = name.trim();
+  return cleaned.length >= 2 && /[a-zA-Z]/.test(cleaned);
+}
+
+function hardenMenu(menu: MenuShape): ParsedMenuCategory[] {
+  const map = new Map<string, ParsedMenuCategory>();
+
+  for (const category of menu.categories) {
+    const key = category.name.trim().toLowerCase();
+
+    for (const item of category.items) {
+      if (!isValidItemName(item.name)) continue;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          category: category.name.trim(),
+          items: [],
+        });
+      }
+
+      map.get(key)!.items.push({
+        name: item.name.trim(),
+        price: item.price ?? null,
+      });
+    }
+  }
+
+  return [...map.values()].filter(c => c.items.length > 0);
+}
+
+/* ============================================================
+   PUBLIC EXPORT (HARDENED)
    ============================================================ */
 
 export default {
-  parseTextToMenuVariants(rawText: string): {
-    strict: MenuShape;
-    smart: MenuShape;
-  } {
-    return {
-      strict: strictParse(rawText),
-      smart: smartParse(rawText),
-    };
-  },
+  parseTextToMenu(rawText: string): ParsedMenuCategory[] {
+    const smart = smartParse(rawText);
+    const strict = strictParse(rawText);
 
-  parseTextToMenu(rawText: string): MenuShape {
-    const { strict, smart } = this.parseTextToMenuVariants(rawText);
-    return smart.categories.length > 0 ? smart : strict;
+    const base =
+      smart.categories.length > 0 ? smart : strict;
+
+    return hardenMenu(base);
   },
 };

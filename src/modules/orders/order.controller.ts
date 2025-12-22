@@ -1,97 +1,150 @@
-// src/modules/orders/order.controller.ts
 import { Request, Response } from "express";
 import * as OrderService from "./order.service";
+import { OrderStatus } from "./order.model";
 
-/**
- * Helper to safely read custom request props (user, tenantId) without requiring
- * global type augmentation. Casts to `any` locally to keep file-level safety.
- */
-const getUserIdFromReq = (req: Request) => {
-  return (req as any).user?._id ?? null;
-};
-const getTenantIdFromReq = (req: Request) => {
-  return (req as any).tenantId ?? null;
+/* ------------------------------------------------------------------
+   HELPERS
+------------------------------------------------------------------- */
+
+const getUserId = (req: Request): string | null =>
+  (req as any).user?.id ?? null;
+
+const resolveSessionId = (req: Request): string | undefined => {
+  const headerSid = req.headers["x-session-id"];
+  if (typeof headerSid === "string" && headerSid.trim() !== "") {
+    return headerSid;
+  }
+
+  if (
+    typeof req.body?.sessionId === "string" &&
+    req.body.sessionId.trim() !== ""
+  ) {
+    return req.body.sessionId;
+  }
+
+  return undefined;
 };
 
-// ---------------------- CREATE ORDER ----------------------
-export const createOrderHandler = async (req: Request, res: Response) => {
+/* ------------------------------------------------------------------
+   ALLOWED ORDER STATUSES (CANONICAL)
+------------------------------------------------------------------- */
+
+const VALID_ORDER_STATUSES: OrderStatus[] = [
+  "NEW",
+  "PREPARING",
+  "READY",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+/* ------------------------------------------------------------------
+   CREATE ORDER
+------------------------------------------------------------------- */
+
+export const createOrderHandler = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    const order = await (OrderService as any).createOrder({
-      userId: getUserIdFromReq(req),
-      tenantId: getTenantIdFromReq(req),
-      tableId: req.body.tableId,
+    const order = await OrderService.createOrder({
+      userId: getUserId(req),
+      sessionId: resolveSessionId(req),
+      tenantId: req.body.tenantId ?? null,
+      tableId: req.body.tableId ?? null,
       items: req.body.items,
       instructions: req.body.instructions,
       payment: req.body.payment,
     });
 
-    return res.status(201).json({ data: order });
-  } catch (err: any) {
-    // Log if you have a logger: logger.error(err)
-    return res.status(400).json({ message: err?.message ?? "Failed to create order" });
+    res.status(201).json({ data: order });
+  } catch (e: any) {
+    res.status(400).json({ message: e.message });
   }
 };
 
-// ---------------------- GET ORDER BY ID ----------------------
-export const getOrderHandler = async (req: Request, res: Response) => {
+/* ------------------------------------------------------------------
+   GET ORDER (CUSTOMER POLLING)
+------------------------------------------------------------------- */
+
+export const getOrderHandler = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    const order = await (OrderService as any).getOrderById(
-      req.params.id,
-      getTenantIdFromReq(req) ?? ""
-    );
+    const order = await OrderService.getOrderById(req.params.id);
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    return res.json({ data: order });
-  } catch (err: any) {
-    return res.status(400).json({ message: err?.message ?? "Failed to fetch order" });
+    res.json({ data: order });
+  } catch (e: any) {
+    res.status(400).json({ message: e.message });
   }
 };
 
-// ---------------------- LIST ORDERS ----------------------
-export const listOrdersHandler = async (req: Request, res: Response) => {
+/* ------------------------------------------------------------------
+   LIST ORDERS
+------------------------------------------------------------------- */
+
+export const listOrdersHandler = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    const orders = await (OrderService as any).listOrders({
-      tenantId: getTenantIdFromReq(req) ?? "",
-      userId: (req.query.userId as string) ?? undefined,
-      status: (req.query.status as string) ?? undefined,
-      // Consider adding pagination: page, limit, sort, etc.
+    const orders = await OrderService.listOrders({
+      userId: getUserId(req) ?? undefined,
+      status: req.query.status as OrderStatus | undefined,
     });
 
-    return res.json({ data: orders });
-  } catch (err: any) {
-    return res.status(400).json({ message: err?.message ?? "Failed to list orders" });
+    res.json({ data: orders });
+  } catch (e: any) {
+    res.status(400).json({ message: e.message });
   }
 };
 
-// ---------------------- UPDATE ORDER STATUS ----------------------
-export const updateOrderStatusHandler = async (req: Request, res: Response) => {
+/* ------------------------------------------------------------------
+   UPDATE ORDER STATUS
+------------------------------------------------------------------- */
+
+export const updateOrderStatusHandler = async (
+  req: Request,
+  res: Response
+) => {
   try {
-    const updated = await (OrderService as any).updateOrderStatus(
+    const status = req.body.status as OrderStatus;
+
+    if (!status) {
+      return res.status(400).json({ message: "Status is required" });
+    }
+
+    if (!VALID_ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({ message: "Invalid order status" });
+    }
+
+    const order = await OrderService.updateOrderStatus(
       req.params.id,
-      req.body.status,
-      getTenantIdFromReq(req) ?? ""
+      status
     );
 
-    return res.json({ data: updated });
-  } catch (err: any) {
-    return res.status(400).json({ message: err?.message ?? "Failed to update order status" });
+    res.json({ data: order });
+  } catch (e: any) {
+    res.status(400).json({ message: e.message });
   }
 };
 
-// ---------------------- CANCEL ORDER ----------------------
-export const cancelOrderHandler = async (req: Request, res: Response) => {
-  try {
-    const updated = await (OrderService as any).cancelOrder(
-      req.params.id,
-      getUserIdFromReq(req),
-      getTenantIdFromReq(req) ?? ""
-    );
+/* ------------------------------------------------------------------
+   CANCEL ORDER
+------------------------------------------------------------------- */
 
-    return res.json({ data: updated });
-  } catch (err: any) {
-    return res.status(400).json({ message: err?.message ?? "Failed to cancel order" });
+export const cancelOrderHandler = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const order = await OrderService.cancelOrder(req.params.id);
+    res.json({ data: order });
+  } catch (e: any) {
+    res.status(400).json({ message: e.message });
   }
 };

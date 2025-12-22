@@ -1,202 +1,165 @@
+// C:\backend_old\src\modules\menu\menu.controller.ts
+
 import { Request, Response } from "express";
+import { createWorker } from "tesseract.js";
+
 import MenuService from "./menu.service";
-import { handleImageOcrUpload } from "./ocr.service";
-import MenuParser from "./menu.parser";
-import MenuMapper from "./menu.mapper";
-
-// ✅ DEFAULT-EXPORTED INSTANCE
+import Item from "./item.model";
 import MenuCommitService from "./menu.commit.service";
-
-// 🔐 STEP 5 — DTO Validation (LOCKED)
+import MenuDraftSnapshot from "./menu.snapshot.model";
 import { CommitPayloadSchema } from "./menu.commit.schema";
-
-// Canonical types expected by mapper
-import {
-  ParsedMenuCategory,
-  ParsedMenuShape,
-} from "./ocr.types";
 
 const service = new MenuService();
 
-/* ============================================================
-   1. MANUAL MENU CREATION
-   ============================================================ */
-export const uploadManual = async (req: Request, res: Response) => {
-  try {
-    const { vendorId, categoryName, itemName, price, description } = req.body;
-
-    if (!vendorId || !categoryName || !itemName) {
-      return res.status(400).json({
-        success: false,
-        message: "vendorId, categoryName, and itemName are required.",
-      });
-    }
-
-    const menu = await service.createManualMenu({
-      vendorId,
-      categoryName,
-      itemName,
-      price,
-      description,
-    });
-
-    return res.status(201).json({
-      success: true,
-      message: "Menu item added manually.",
-      menu,
-    });
-  } catch (error) {
-    console.error("uploadManual error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error during manual menu creation.",
-    });
-  }
+/* =======================
+   GET MENU (Vendor)
+   ======================= */
+export const getMenu = async (req: Request, res: Response) => {
+  const menu = await service.getMenu(req.params.vendorId);
+  res.json({ success: true, menu });
 };
 
-/* ============================================================
-   2. OCR UPLOAD + PARSING + MAPPING
-   ============================================================ */
-export const uploadOCR = async (req: any, res: Response) => {
-  try {
-    const file = req.file;
+/* =======================
+   GET PUBLIC MENU
+   ======================= */
+export const getPublicMenu = async (req: Request, res: Response) => {
+  const { restaurantId } = req.query;
 
-    if (!file || !file.buffer) {
-      return res.status(400).json({
-        success: false,
-        message: "Image not received. Ensure multer memoryStorage() is used.",
-      });
+  if (!restaurantId) {
+    return res
+      .status(400)
+      .json({ success: false, message: "restaurantId required" });
+  }
+
+  const items = await Item.find({
+    restaurantId,
+    available: true,
+  }).lean();
+
+  res.json({ success: true, items });
+};
+
+/* =======================
+   OCR UPLOAD (REAL OCR, TYPE-SAFE)
+   ======================= */
+export const uploadOCR = async (req: Request, res: Response) => {
+  let worker: any;
+
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Image file missing" });
     }
 
-    const ocrResult = await handleImageOcrUpload(
-      file.buffer,
-      file.originalname,
-      file.mimetype
-    );
+    const { restaurantId } = req.body;
+    if (!restaurantId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "restaurantId missing" });
+    }
 
-    const rawText = ocrResult.rawText || "";
-    const parsed = MenuParser.parseTextToMenu(rawText);
+    /* ---------- OCR WORKER ---------- */
+    worker = await createWorker("eng");
 
-    const categories: ParsedMenuCategory[] = parsed.map((cat) => ({
-      name: cat.category,
-      items: cat.items.map((item) => ({
-        name: item.name,
-        price: item.price,
-      })),
-    }));
+    await worker.setParameters({
+      tessedit_pageseg_mode: 6, // uniform text block (menus)
+      tessedit_char_whitelist:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789₹Rs./ ",
+    });
 
-    const parsedShape: ParsedMenuShape = { categories };
+    const {
+      data: { text },
+    } = await worker.recognize(req.file.buffer);
 
-    const vendorId =
-      req.body?.vendorId || req.query?.vendorId || undefined;
+    await worker.terminate();
 
-    const mapping = await MenuMapper.mapParsedMenuToCategories(
-      parsedShape,
-      {
-        restaurantId: vendorId,
-        fuzzyThreshold: 0.4,
-      }
-    );
+    /* ---------- NORMALIZATION ---------- */
+    const rawText = text || "";
 
-    return res.json({
+    const normalizedText = rawText
+      .replace(/[^\x20-\x7E₹]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    /* ---------- PARSING ---------- */
+    const parsedItems = normalizedText
+      .split(/(?<=\d)\s+/)
+      .map((chunk: string) => {
+        const match = chunk.match(
+          /(.+?)\s*(₹|rs\.?|rs)?\s*(\d{2,4})/i
+        );
+        if (!match) return null;
+
+        return {
+          name: match[1].trim(),
+          price: Number(match[3]),
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
       success: true,
+      restaurantId,
+      parsedItems,
       rawText,
-      uploadedFileUrl: ocrResult.uploadedFileUrl || null,
-      menu: parsedShape.categories,
-      mapping,
+      normalizedText,
     });
-  } catch (error) {
-    console.error("uploadOCR error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "OCR processing failed.",
-    });
+  } catch (e: any) {
+    if (worker) {
+      try {
+        await worker.terminate();
+      } catch {}
+    }
+
+    res.status(500).json({ success: false, message: e.message });
   }
 };
 
-/* ============================================================
-   3. SAVE OCR MENU (SNAPSHOT)
-   ============================================================ */
+/* =======================
+   SAVE OCR DRAFT
+   ======================= */
 export const saveOCRMenu = async (req: Request, res: Response) => {
   try {
-    const { vendorId, menu } = req.body;
+    const { restaurantId, mapping } = req.body;
 
-    if (!vendorId || !menu) {
+    if (!restaurantId || !mapping) {
       return res.status(400).json({
         success: false,
-        message: "vendorId and menu payload are required.",
+        message: "restaurantId and mapping are required",
       });
     }
 
-    const saved = await service.saveMenu(vendorId, menu);
+    const snapshot = await MenuDraftSnapshot.create({
+      restaurantId,
+      mapping,
+      committedAt: null,
+      committedBy: null,
+    });
 
-    return res.json({
-      success: true,
-      message: "OCR menu saved successfully.",
-      menu: saved,
-    });
-  } catch (error) {
-    console.error("saveOCRMenu error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to save OCR menu.",
-    });
+    res.json({ success: true, snapshotId: snapshot._id });
+  } catch (e: any) {
+    res.status(400).json({ success: false, message: e.message });
   }
 };
 
-/* ============================================================
-   4. GET MENU
-   ============================================================ */
-export const getMenu = async (req: Request, res: Response) => {
-  try {
-    const vendorId = req.params.vendorId;
-
-    if (!vendorId) {
-      return res.status(400).json({
-        success: false,
-        message: "vendorId parameter is required.",
-      });
-    }
-
-    const menu = await service.getMenu(vendorId);
-
-    return res.json({
-      success: true,
-      menu: menu || { categories: [] },
-    });
-  } catch (error) {
-    console.error("getMenu error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch vendor menu.",
-    });
-  }
-};
-
-/* ============================================================
-   5. COMMIT APPROVED MENU (FINAL — DEBUG REMOVED)
-   ============================================================ */
+/* =======================
+   COMMIT MENU
+   ======================= */
 export const commitMenu = async (req: Request, res: Response) => {
   try {
-    // 🔒 STEP 5 — Enforce API contract (LOCKED)
     CommitPayloadSchema.parse(req.body);
 
-    const { restaurantId, mapping } = req.body;
+    const { restaurantId, snapshotId } = req.body;
 
     const result = await MenuCommitService.commitMapping({
       restaurantId,
-      mapping,
+      snapshotId,
+      committedBy: "system",
     });
 
-    return res.json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    console.error("commitMenu error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to commit menu.",
-    });
+    res.json({ success: true, ...result });
+  } catch (e: any) {
+    res.status(400).json({ success: false, message: e.message });
   }
 };

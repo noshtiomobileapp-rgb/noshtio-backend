@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import vision from "@google-cloud/vision";
 import path from "path";
 
@@ -11,8 +9,12 @@ const client = new vision.ImageAnnotatorClient({
 });
 
 /**
- * Runs OCR on an uploaded menu image and returns extracted text
- * @param imagePath path to uploaded file (multer upload or filesystem path)
+ * Runs OCR on an uploaded menu image and returns extracted RAW text
+ * NOTE:
+ * - No parsing
+ * - No normalization
+ * - No business logic
+ * This is intentional (Step 3 architecture)
  */
 export async function runOCR(imagePath: string): Promise<string> {
   try {
@@ -20,23 +22,19 @@ export async function runOCR(imagePath: string): Promise<string> {
 
     const [result] = await client.textDetection(imagePath);
 
-    if (
-      !result ||
-      !result.textAnnotations ||
-      result.textAnnotations.length === 0
-    ) {
-      console.log("⚠️ No text detected.");
+    if (!result?.textAnnotations || result.textAnnotations.length === 0) {
+      console.warn("⚠️ No text detected by OCR");
       return "";
     }
 
-    const extractedText = result.textAnnotations[0].description;
+    const extractedText = result.textAnnotations[0]?.description ?? "";
 
-    console.log("📄 OCR Extracted Text:");
+    console.log("📄 OCR Extracted Text (raw):");
     console.log(extractedText);
 
     return extractedText;
   } catch (error) {
     console.error("❌ Google Vision OCR Error:", error);
-    throw error;
+    throw new Error("OCR processing failed");
   }
 }

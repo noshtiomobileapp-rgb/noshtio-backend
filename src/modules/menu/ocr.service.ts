@@ -5,13 +5,23 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { v4 as uuidv4 } from "uuid";
 import MenuParser from "./menu.parser";
 
-// Load environment variables
+/* ============================================================
+   Environment
+   ============================================================ */
+
 const S3_REGION = process.env.AWS_REGION || "";
 const S3_BUCKET = process.env.S3_BUCKET || "";
 
 /* ============================================================
-   S3 CLIENT INITIALIZATION (Optional)
+   Google Vision Client
    ============================================================ */
+
+const visionClient = new ImageAnnotatorClient();
+
+/* ============================================================
+   Optional S3 Client
+   ============================================================ */
+
 let s3Client: S3Client | null = null;
 
 if (S3_BUCKET) {
@@ -21,24 +31,17 @@ if (S3_BUCKET) {
 }
 
 /* ============================================================
-   GOOGLE VISION CLIENT
+   Helpers
    ============================================================ */
-const visionClient = new ImageAnnotatorClient();
 
-/* ============================================================
-   Helper: Sanitize filenames for S3
-   ============================================================ */
 function sanitizeFilename(name: string = ""): string {
   return name.replace(/[^\w\d.\-_]/g, "_");
 }
 
-/* ============================================================
-   Upload Buffer to S3 (if configured)
-   ============================================================ */
-export async function uploadBufferToS3(
+async function uploadBufferToS3(
   buffer: Buffer,
   key: string,
-  contentType = "application/octet-stream"
+  contentType: string
 ): Promise<string | null> {
   if (!s3Client || !S3_BUCKET) return null;
 
@@ -58,15 +61,16 @@ export async function uploadBufferToS3(
 }
 
 /* ============================================================
-   OCR + Parsing + Optional S3 Upload
+   OCR + HARDENED PARSING + OPTIONAL UPLOAD
    ============================================================ */
+
 export async function handleImageOcrUpload(
   buffer: Buffer,
   originalName: string,
   mimeType: string
 ) {
   /* ---------------------------------------------
-     STEP 1 — GOOGLE VISION OCR
+     STEP 1 — OCR (RAW TEXT ONLY)
      --------------------------------------------- */
   let rawText = "";
 
@@ -76,22 +80,20 @@ export async function handleImageOcrUpload(
     });
 
     rawText = result?.fullTextAnnotation?.text || "";
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ OCR Error:", error);
     throw new Error("Failed to process OCR text");
   }
 
   /* ---------------------------------------------
-     STEP 2 — PARSE RAW TEXT → MENU VARIANTS
+     STEP 2 — PARSE + HARDEN (STEP 3)
      --------------------------------------------- */
-  const parsedVariants = MenuParser.parseTextToMenuVariants(rawText);
-  const preferred =
-    parsedVariants.smart.categories.length > 0
-      ? parsedVariants.smart
-      : parsedVariants.strict;
+  const menu = MenuParser.parseTextToMenu(rawText);
+  // menu is now:
+  // Array<{ category: string; items: { name: string; price: number | null }[] }>
 
   /* ---------------------------------------------
-     STEP 3 — UPLOAD IMAGE TO S3 (OPTIONAL)
+     STEP 3 — OPTIONAL IMAGE UPLOAD
      --------------------------------------------- */
   let uploadedFileUrl: string | null = null;
 
@@ -102,18 +104,17 @@ export async function handleImageOcrUpload(
       )}`;
       uploadedFileUrl = await uploadBufferToS3(buffer, key, mimeType);
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ S3 Upload Error:", error);
   }
 
   /* ---------------------------------------------
-     STEP 4 — RETURN FORMATTED RESULT
+     STEP 4 — RETURN FRONTEND-SAFE RESULT
      --------------------------------------------- */
   return {
     success: true,
     uploadedFileUrl,
     rawText,
-    parsed: parsedVariants,
-    preferred,
+    menu, // ✅ HARDENED OUTPUT ONLY
   };
 }

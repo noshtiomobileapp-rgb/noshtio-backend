@@ -1,5 +1,10 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+/**
+ * 🔒 Backend v1.1
+ * Step 4.3 — Availability added
+ */
+
 export interface IItemSpecification {
   name: string;
   price: number;
@@ -11,6 +16,7 @@ export interface IItem extends Document {
   specifications?: IItemSpecification[];
   categoryId?: mongoose.Types.ObjectId;
   restaurantId: mongoose.Types.ObjectId;
+  isAvailable: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,11 +35,17 @@ const ItemSchema = new Schema<IItem>(
     price: { type: Number, default: null },
     specifications: { type: [ItemSpecificationSchema], default: [] },
     categoryId: { type: Schema.Types.ObjectId, ref: "Category" },
-    restaurantId: { type: Schema.Types.ObjectId, ref: "Restaurant", required: true },
+    restaurantId: {
+      type: Schema.Types.ObjectId,
+      ref: "Restaurant",
+      required: true,
+    },
+    isAvailable: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
 
+ItemSchema.index({ restaurantId: 1, categoryId: 1 });
 ItemSchema.index({ name: "text" });
 
 export const Item: Model<IItem> =

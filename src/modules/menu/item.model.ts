@@ -2,28 +2,56 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IItem extends Document {
+  restaurantId: mongoose.Types.ObjectId;
+  categoryId: mongoose.Types.ObjectId;
   name: string;
+  normalizedName: string;
   price: number;
   description?: string;
-  category?: mongoose.Types.ObjectId;
   available: boolean;
-  image?: string;    // S3 URL
+  image?: string;
   imageAlt?: string;
+  source?: "manual" | "ocr";
   createdAt: Date;
   updatedAt: Date;
 }
 
-const ItemSchema: Schema = new Schema(
+const ItemSchema = new Schema(
   {
-    name: { type: String, required: true, trim: true, index: true },
-    price: { type: Number, default: 0 },
+    restaurantId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      index: true,
+    },
+
+    categoryId: {
+      type: Schema.Types.ObjectId,
+      ref: "Category",
+      required: true,
+      index: true,
+    },
+
+    name: { type: String, required: true, trim: true },
+    normalizedName: { type: String, required: true, index: true },
+
+    price: { type: Number, required: true },
+
     description: { type: String, default: "" },
-    category: { type: Schema.Types.ObjectId, ref: "Category", index: true },
+
     available: { type: Boolean, default: true },
+
     image: { type: String, default: "" },
     imageAlt: { type: String, default: "" },
+
+    source: { type: String, enum: ["manual", "ocr"], default: "manual" },
   },
   { timestamps: true }
 );
 
-export default mongoose.models?.Item || mongoose.model<IItem>("Item", ItemSchema);
+ItemSchema.index(
+  { restaurantId: 1, normalizedName: 1 },
+  { unique: true }
+);
+
+export default mongoose.models.Item ||
+  mongoose.model<IItem>("Item", ItemSchema);
