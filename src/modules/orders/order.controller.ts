@@ -2,32 +2,25 @@ import { Request, Response } from "express";
 import * as OrderService from "./order.service";
 import { OrderStatus } from "./order.model";
 
-/* ------------------------------------------------------------------
-   HELPERS
-------------------------------------------------------------------- */
+/* ============================================================
+   HELPERS (MVP CANONICAL)
+============================================================ */
 
-const getUserId = (req: Request): string | null =>
-  (req as any).user?.id ?? null;
-
-const resolveSessionId = (req: Request): string | undefined => {
-  const headerSid = req.headers["x-session-id"];
-  if (typeof headerSid === "string" && headerSid.trim() !== "") {
-    return headerSid;
+/**
+ * Vendor identity is resolved ONLY from auth middleware.
+ * tenantId === vendorId (MVP rule)
+ */
+const getVendorId = (req: Request): string => {
+  const vendorId = (req as any).user?.tenantId;
+  if (!vendorId) {
+    throw new Error("Vendor context missing");
   }
-
-  if (
-    typeof req.body?.sessionId === "string" &&
-    req.body.sessionId.trim() !== ""
-  ) {
-    return req.body.sessionId;
-  }
-
-  return undefined;
+  return vendorId;
 };
 
-/* ------------------------------------------------------------------
+/* ============================================================
    ALLOWED ORDER STATUSES (CANONICAL)
-------------------------------------------------------------------- */
+============================================================ */
 
 const VALID_ORDER_STATUSES: OrderStatus[] = [
   "NEW",
@@ -37,75 +30,93 @@ const VALID_ORDER_STATUSES: OrderStatus[] = [
   "CANCELLED",
 ];
 
-/* ------------------------------------------------------------------
-   CREATE ORDER
-------------------------------------------------------------------- */
+/* ============================================================
+   CREATE ORDER (MVP MINIMAL)
+============================================================ */
 
 export const createOrderHandler = async (
   req: Request,
   res: Response
 ) => {
   try {
+    const vendorId = getVendorId(req);
+    const { totalAmount } = req.body;
+
+    if (typeof totalAmount !== "number") {
+      return res.status(400).json({
+        message: "totalAmount is required",
+      });
+    }
+
     const order = await OrderService.createOrder({
-      userId: getUserId(req),
-      sessionId: resolveSessionId(req),
-      tenantId: req.body.tenantId ?? null,
-      tableId: req.body.tableId ?? null,
-      items: req.body.items,
-      instructions: req.body.instructions,
-      payment: req.body.payment,
+      vendorId,
+      totalAmount,
     });
 
-    res.status(201).json({ data: order });
+    return res.status(201).json({ data: order });
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
+    return res.status(400).json({
+      message: e?.message ?? "Failed to create order",
+    });
   }
 };
 
-/* ------------------------------------------------------------------
-   GET ORDER (CUSTOMER POLLING)
-------------------------------------------------------------------- */
+/* ============================================================
+   GET ORDER (READ-ONLY / POLLING SAFE)
+============================================================ */
 
 export const getOrderHandler = async (
   req: Request,
   res: Response
 ) => {
   try {
-    const order = await OrderService.getOrderById(req.params.id);
+    const order = await OrderService.getOrderById(
+      req.params.id
+    );
 
     if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+      return res.status(404).json({
+        message: "Order not found",
+      });
     }
 
-    res.json({ data: order });
+    return res.json({ data: order });
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
+    return res.status(400).json({
+      message: e?.message ?? "Failed to fetch order",
+    });
   }
 };
 
-/* ------------------------------------------------------------------
-   LIST ORDERS
-------------------------------------------------------------------- */
+/* ============================================================
+   LIST ORDERS (VENDOR CONTEXT)
+============================================================ */
 
 export const listOrdersHandler = async (
   req: Request,
   res: Response
 ) => {
   try {
+    const vendorId = getVendorId(req);
+    const status =
+      req.query.status as OrderStatus | undefined;
+
     const orders = await OrderService.listOrders({
-      userId: getUserId(req) ?? undefined,
-      status: req.query.status as OrderStatus | undefined,
+      vendorId,
+      status,
     });
 
-    res.json({ data: orders });
+    return res.json({ data: orders });
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
+    return res.status(400).json({
+      message: e?.message ?? "Failed to list orders",
+    });
   }
 };
 
-/* ------------------------------------------------------------------
-   UPDATE ORDER STATUS
-------------------------------------------------------------------- */
+/* ============================================================
+   UPDATE ORDER STATUS (STRICT LINEAR FLOW)
+============================================================ */
 
 export const updateOrderStatusHandler = async (
   req: Request,
@@ -115,11 +126,15 @@ export const updateOrderStatusHandler = async (
     const status = req.body.status as OrderStatus;
 
     if (!status) {
-      return res.status(400).json({ message: "Status is required" });
+      return res.status(400).json({
+        message: "Status is required",
+      });
     }
 
     if (!VALID_ORDER_STATUSES.includes(status)) {
-      return res.status(400).json({ message: "Invalid order status" });
+      return res.status(400).json({
+        message: "Invalid order status",
+      });
     }
 
     const order = await OrderService.updateOrderStatus(
@@ -127,24 +142,63 @@ export const updateOrderStatusHandler = async (
       status
     );
 
-    res.json({ data: order });
+    return res.json({ data: order });
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
+    return res.status(400).json({
+      message:
+        e?.message ?? "Failed to update order status",
+    });
   }
 };
 
-/* ------------------------------------------------------------------
+/* ============================================================
    CANCEL ORDER
-------------------------------------------------------------------- */
+============================================================ */
 
 export const cancelOrderHandler = async (
   req: Request,
   res: Response
 ) => {
   try {
-    const order = await OrderService.cancelOrder(req.params.id);
-    res.json({ data: order });
+    const order = await OrderService.cancelOrder(
+      req.params.id
+    );
+    return res.json({ data: order });
   } catch (e: any) {
-    res.status(400).json({ message: e.message });
+    return res.status(400).json({
+      message:
+        e?.message ?? "Failed to cancel order",
+    });
+  }
+};
+
+/* ============================================================
+   VENDOR DASHBOARD — ORDERS SUMMARY
+============================================================ */
+/**
+ * GET /vendor/orders/summary
+ * Used by Vendor Dashboard home
+ */
+export const vendorOrdersSummaryHandler = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const vendorId = getVendorId(req);
+
+    const summary =
+      await OrderService.getVendorOrdersSummary(
+        vendorId
+      );
+
+    return res.json(summary);
+  } catch (err) {
+    console.error(
+      "vendorOrdersSummaryHandler error:",
+      err
+    );
+    return res.status(500).json({
+      message: "Failed to load orders summary",
+    });
   }
 };

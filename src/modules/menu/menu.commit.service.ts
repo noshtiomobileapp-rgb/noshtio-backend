@@ -6,6 +6,17 @@ import { Category } from "./models/category.model";
 
 const normalize = (v: string) => v.trim().toLowerCase();
 
+type DraftItem = {
+  name: string;
+  price: number;
+  available?: boolean;
+};
+
+type DraftCategory = {
+  category: string;
+  items: DraftItem[];
+};
+
 class MenuCommitService {
   async commitMapping({
     restaurantId,
@@ -26,7 +37,18 @@ class MenuCommitService {
       const snapshot = await MenuDraftSnapshot.findById(snapshotId).session(
         session
       );
-      if (!snapshot) throw new Error("Snapshot not found");
+
+      if (!snapshot) {
+        throw new Error("Snapshot not found");
+      }
+
+      if (snapshot.committedAt) {
+        throw new Error("Snapshot already committed");
+      }
+
+      if (snapshot.restaurantId.toString() !== restaurantId) {
+        throw new Error("Restaurant mismatch");
+      }
 
       const rid = new Types.ObjectId(restaurantId);
 
@@ -39,9 +61,11 @@ class MenuCommitService {
         categories.map((c) => [normalize(c.name), c])
       );
 
-      for (const cat of snapshot.mapping as any[]) {
+      for (const cat of snapshot.mapping as DraftCategory[]) {
         const category = categoryByName.get(normalize(cat.category));
-        if (!category) continue;
+        if (!category) {
+          throw new Error(`Category not found: ${cat.category}`);
+        }
 
         for (const item of cat.items) {
           const normalizedName = normalize(item.name);

@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
 import { OrderModel, OrderStatus } from "./order.model";
 
-/**
- * Allowed linear transitions for MVP kitchen flow
- * This is the single source of truth
- */
+/* ============================================================
+   STATUS FLOW — SINGLE SOURCE OF TRUTH (MVP)
+============================================================ */
+
 const STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
   NEW: ["PREPARING"],
   PREPARING: ["READY"],
@@ -13,23 +13,31 @@ const STATUS_FLOW: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
+/* ============================================================
+   LIST KITCHEN ORDERS
+============================================================ */
+
 /**
  * GET /api/kitchen/orders
- * List orders visible to the kitchen
+ * Read-only list for kitchen screen
  */
 export const listKitchenOrders = async (
   req: Request,
   res: Response
 ) => {
   try {
-    const tenantId = (req as any).tenantId;
+    const tenantId = (req as any).user?.tenantId;
     const status = req.query.status as OrderStatus | undefined;
 
     if (!tenantId) {
-      return res.status(400).json({ message: "Tenant context missing" });
+      return res.status(400).json({
+        message: "Tenant context missing",
+      });
     }
 
-    const query: any = { tenantId };
+    const query: Record<string, any> = {
+      vendorId: tenantId,
+    };
 
     if (status) {
       query.status = status;
@@ -41,15 +49,19 @@ export const listKitchenOrders = async (
 
     return res.json({ data: orders });
   } catch (err: any) {
-    return res
-      .status(400)
-      .json({ message: err?.message ?? "Failed to fetch kitchen orders" });
+    return res.status(500).json({
+      message: err?.message ?? "Failed to fetch kitchen orders",
+    });
   }
 };
 
+/* ============================================================
+   UPDATE KITCHEN ORDER STATUS
+============================================================ */
+
 /**
  * PATCH /api/kitchen/orders/:id/status
- * Explicit kitchen status transition
+ * Strict linear status transition
  */
 export const updateKitchenOrderStatus = async (
   req: Request,
@@ -60,23 +72,34 @@ export const updateKitchenOrderStatus = async (
     const { status: nextStatus } = req.body as {
       status?: OrderStatus;
     };
-    const tenantId = (req as any).tenantId;
+
+    const tenantId = (req as any).user?.tenantId;
 
     if (!tenantId) {
-      return res.status(400).json({ message: "Tenant context missing" });
+      return res.status(400).json({
+        message: "Tenant context missing",
+      });
     }
 
     if (!nextStatus) {
-      return res.status(400).json({ message: "Status is required" });
+      return res.status(400).json({
+        message: "Status is required",
+      });
     }
 
-    const order = await OrderModel.findOne({ _id: id, tenantId });
+    const order = await OrderModel.findOne({
+      _id: id,
+      vendorId: tenantId,
+    });
 
     if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+      return res.status(404).json({
+        message: "Order not found",
+      });
     }
 
-    const allowedNext = STATUS_FLOW[order.status];
+    const allowedNext =
+      STATUS_FLOW[order.status as OrderStatus];
 
     if (!allowedNext.includes(nextStatus)) {
       return res.status(400).json({
@@ -84,21 +107,14 @@ export const updateKitchenOrderStatus = async (
       });
     }
 
-    // Apply status
     order.status = nextStatus;
-
-    // Set timestamps (only those that exist)
-    const now = new Date();
-    if (nextStatus === "PREPARING") order.preparingAt = now;
-    if (nextStatus === "READY") order.readyAt = now;
-    if (nextStatus === "COMPLETED") order.completedAt = now;
-
     await order.save();
 
     return res.json({ data: order });
   } catch (err: any) {
-    return res
-      .status(400)
-      .json({ message: err?.message ?? "Failed to update order status" });
+    return res.status(500).json({
+      message:
+        err?.message ?? "Failed to update order status",
+    });
   }
 };

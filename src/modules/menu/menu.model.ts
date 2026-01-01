@@ -1,21 +1,59 @@
-import { Schema, model, Types } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
-const MenuItemSchema = new Schema({
-  name: String,
-  description: String,
-  price: Number,
-  imageUrl: String
-});
+/* ============================================================
+   TYPES
+============================================================ */
 
-const CategorySchema = new Schema({
-  name: String,
-  items: [MenuItemSchema]
-});
+export interface MenuDocument extends Document {
+  vendorId: mongoose.Types.ObjectId;
+  name: string;
+  price: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-const MenuSchema = new Schema({
-  vendorId: { type: Types.ObjectId, ref: "Vendor", required: true },
-  categories: [CategorySchema],
-  createdAt: { type: Date, default: Date.now }
-});
+/* ============================================================
+   SCHEMA
+============================================================ */
 
-export default model("Menu", MenuSchema);
+const MenuSchema = new Schema<MenuDocument>(
+  {
+    vendorId: {
+      type: Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+      index: true,
+    },
+
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+/* ============================================================
+   MODEL REGISTRATION (CRITICAL)
+============================================================ */
+
+export const Menu =
+  mongoose.models.Menu || mongoose.model<MenuDocument>("Menu", MenuSchema);
+
+export default Menu;

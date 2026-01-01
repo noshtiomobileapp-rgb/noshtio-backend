@@ -1,46 +1,25 @@
-﻿import { Router } from "express";
+import { Router } from "express";
 import multer from "multer";
-
 import {
   uploadMenuController,
   getCurrentMenuSnapshot,
-} from "../../controllers/menu.upload.controller";
-
-import {
-  getDraftSnapshot,
-} from "./menu.controller";
+} from "../controllers/menu.upload.controller";
 
 const router = Router();
 const upload = multer();
 
 /* ============================================================
-   MENU ROUTES — STEP: UPLOAD MENU (OCR / MANUAL)
+   ROUTES
 ============================================================ */
-
-/**
- * Upload menu file (image / pdf)
- * Creates DRAFT snapshot
- */
 router.post(
   "/upload",
   upload.single("file"),
   uploadMenuController
 );
 
-/**
- * Get latest draft snapshot for vendor
- */
 router.get(
   "/current",
   getCurrentMenuSnapshot
-);
-
-/**
- * Get draft snapshot by ID (read-only)
- */
-router.get(
-  "/draft/:snapshotId",
-  getDraftSnapshot
 );
 
 export default router;

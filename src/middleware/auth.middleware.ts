@@ -1,61 +1,114 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload } from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "default_secret_key";
+const JWT_SECRET_RAW = process.env.JWT_SECRET;
+if (!JWT_SECRET_RAW) {
+  throw new Error("JWT_SECRET is not defined");
+}
+const JWT_SECRET: string = JWT_SECRET_RAW;
 
-/**
- * Strict auth middleware
- * Requires valid Bearer token
- */
-const authMiddleware = (
-  req: Request,
+/* ============================================================
+   TYPES
+============================================================ */
+
+export type DecodedUser = JwtPayload & {
+  id: string;
+  role: string;
+  tenantId?: string;
+};
+
+export interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    role: string;
+    tenantId?: string;
+  };
+}
+
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function extractToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  return authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : null;
+}
+
+function assertDecodedUser(payload: JwtPayload): DecodedUser {
+  if (
+    typeof payload.id !== "string" ||
+    typeof payload.role !== "string"
+  ) {
+    throw new Error("Invalid JWT payload");
+  }
+  return payload as DecodedUser;
+}
+
+/* ============================================================
+   AUTH MIDDLEWARE
+============================================================ */
+
+export function authMiddleware(
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) => {
+) {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res
-        .status(401)
-        .json({ message: "Unauthorized: No token provided" });
+    const token = extractToken(req);
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized: Token missing" });
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const verified = jwt.verify(token, JWT_SECRET);
+    if (typeof verified !== "object") {
+      return res.status(401).json({ message: "Unauthorized: Invalid token" });
+    }
 
-    (req as any).user = decoded;
+    const decoded = assertDecodedUser(verified);
+
+    req.user = {
+      id: decoded.id,
+      role: decoded.role,
+      tenantId: decoded.tenantId, // optional
+    };
+
     next();
-  } catch (err: any) {
+  } catch {
     return res.status(401).json({
-      message: "Unauthorized: Invalid token",
-      error: err.message,
+      message: "Unauthorized: Invalid or expired token",
     });
   }
-};
+}
 
-/**
- * Optional auth middleware
- * Attaches user if token exists, otherwise continues as guest
- */
-export const optionalAuth = (
-  req: Request,
+/* ============================================================
+   OPTIONAL AUTH
+============================================================ */
+
+export function optionalAuth(
+  req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
-) => {
+) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = extractToken(req);
+    if (!token) return next();
 
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.split(" ")[1];
-      const decoded = jwt.verify(token, JWT_SECRET);
-      (req as any).user = decoded;
-    }
+    const verified = jwt.verify(token, JWT_SECRET);
+    if (typeof verified !== "object") return next();
+
+    const decoded = assertDecodedUser(verified);
+
+    req.user = {
+      id: decoded.id,
+      role: decoded.role,
+      tenantId: decoded.tenantId,
+    };
   } catch {
-    // ignore token errors for optional auth
+    // ignore
   }
-
   next();
-};
+}
 
 export default authMiddleware;

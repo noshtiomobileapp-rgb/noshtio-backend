@@ -17,6 +17,10 @@ export type MappingResult = {
     name: string;
     specifications?: Array<{ name: string; price: number }>;
     price?: number | null;
+
+    // STEP 4.3
+    isAvailable?: boolean;
+
     matchedItemId?: string | null;
     matchedItemName?: string | null;
     score?: number | null;
@@ -25,9 +29,6 @@ export type MappingResult = {
   evidence?: string[];
 };
 
-/**
- * Detect specification tokens at the end of item names
- */
 const SPEC_TOKEN_REGEX = new RegExp(
   "\\b(" +
     [
@@ -77,9 +78,6 @@ function extractBaseAndSpec(
   return { base: trimmed };
 }
 
-/**
- * Main mapper
- */
 export async function mapParsedMenuToCategories(
   parsed: ParsedMenuShape,
   options?: {
@@ -96,10 +94,8 @@ export async function mapParsedMenuToCategories(
   const itemQuery: Record<string, unknown> = {};
   if (restaurantId) itemQuery.restaurantId = restaurantId;
 
-  // ✅ IMPORTANT: lean<IItem[]> (array, not single item)
   const allItems = await Item.find(itemQuery).lean<IItem[]>().exec();
 
-  // buildFuseIndex MUST be generic: buildFuseIndex<T>
   const fuse = buildFuseIndex<IItem>(allItems, {
     threshold: fuzzyThreshold,
   });
@@ -163,7 +159,7 @@ export async function mapParsedMenuToCategories(
         entry.fallbackPrice = price;
       }
 
-      if (pItem.raw) entry.rawLines.push(pItem.raw);
+      if ((pItem as any).raw) entry.rawLines.push((pItem as any).raw);
       baseMap.set(base, entry);
     }
 
@@ -174,13 +170,16 @@ export async function mapParsedMenuToCategories(
         price: entry.specs.length
           ? undefined
           : entry.fallbackPrice ?? null,
+
+        // STEP 4.3 default
+        isAvailable: true,
+
         matchedItemId: null,
         matchedItemName: null,
         score: null,
         method: "none",
       };
 
-      // ✅ exact match
       const exact = allItems.find(
         (it: IItem) =>
           String(it.name).toLowerCase() ===
@@ -188,16 +187,17 @@ export async function mapParsedMenuToCategories(
       );
 
       if (exact) {
-        mappedItem.matchedItemId = String(exact._id);
+        mappedItem.matchedItemId = String((exact as any)._id);
         mappedItem.matchedItemName = exact.name;
         mappedItem.score = 0;
         mappedItem.method = "exact";
       } else {
-        // ✅ fuzzy match (typed, no unknown)
         const res = fuse.search(entry.baseName, { limit: 1 });
         if (res.length && res[0].score !== undefined) {
           if (res[0].score <= fuzzyThreshold) {
-            mappedItem.matchedItemId = String(res[0].item._id);
+            mappedItem.matchedItemId = String(
+              (res[0].item as any)._id
+            );
             mappedItem.matchedItemName = res[0].item.name;
             mappedItem.score = res[0].score;
             mappedItem.method = "fuzzy";

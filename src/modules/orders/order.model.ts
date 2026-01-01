@@ -1,8 +1,9 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
-/**
- * MVP Kitchen Flow Statuses (Linear, Vendor-First)
- */
+/* ============================================================
+   TYPES (MVP LOCKED)
+============================================================ */
+
 export type OrderStatus =
   | "NEW"
   | "PREPARING"
@@ -10,107 +11,55 @@ export type OrderStatus =
   | "COMPLETED"
   | "CANCELLED";
 
-export interface IOrderItem {
-  itemId: mongoose.Types.ObjectId;
-  name: string;
-  qty: number;
-  price: number;
-  total: number;
-  notes?: string;
-}
-
-export interface IOrder extends Document {
-  tenantId?: mongoose.Types.ObjectId | string;
-
-  userId?: mongoose.Types.ObjectId | string | null;
-  sessionId?: string | null;
-  tableId?: string | null;
-
-  items: IOrderItem[];
-
-  subtotal: number;
-  tax: number;
-  serviceCharge?: number;
-  discount?: number;
-  total: number;
-
+export interface OrderDocument extends Document {
+  vendorId: mongoose.Types.ObjectId;
   status: OrderStatus;
-
-  preparingAt?: Date;
-  readyAt?: Date;
-  completedAt?: Date;
-
-  payment?: {
-    provider?: string;
-    method?: string;
-    status?: "unpaid" | "paid" | "refunded" | "failed";
-    transactionId?: string;
-  };
-
-  instructions?: string;
-
+  totalAmount: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const OrderItemSchema = new Schema<IOrderItem>({
-  itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true },
-  name: { type: String, required: true },
-  qty: { type: Number, required: true, min: 1 },
-  price: { type: Number, required: true },
-  total: { type: Number, required: true },
-  notes: String,
-});
+/* ============================================================
+   SCHEMA
+============================================================ */
 
-const OrderSchema = new Schema<IOrder>(
+const OrderSchema = new Schema<OrderDocument>(
   {
-    tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", index: true },
-
-    userId: { type: Schema.Types.ObjectId, ref: "User", index: true },
-    sessionId: { type: String, index: true },
-    tableId: { type: String, default: null },
-
-    items: { type: [OrderItemSchema], required: true },
-
-    subtotal: { type: Number, required: true },
-    tax: { type: Number, required: true },
-    serviceCharge: { type: Number, default: 0 },
-    discount: { type: Number, default: 0 },
-    total: { type: Number, required: true },
+    vendorId: {
+      type: Schema.Types.ObjectId,
+      ref: "Vendor",
+      required: true,
+      index: true,
+    },
 
     status: {
       type: String,
       enum: ["NEW", "PREPARING", "READY", "COMPLETED", "CANCELLED"],
-      default: "NEW",
+      required: true,
       index: true,
     },
 
-    preparingAt: Date,
-    readyAt: Date,
-    completedAt: Date,
-
-    payment: {
-      provider: String,
-      method: String,
-      status: {
-        type: String,
-        enum: ["unpaid", "paid", "refunded", "failed"],
-        default: "unpaid",
-      },
-      transactionId: String,
+    totalAmount: {
+      type: Number,
+      required: true,
+      min: 0,
     },
-
-    instructions: String,
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-/* 🔐 HARD GUARANTEE */
-OrderSchema.pre("validate", function (next) {
-  if (!this.userId && !this.sessionId) {
-    next(new Error("Order must have either userId or sessionId"));
-  }
-  next();
-});
+/* ============================================================
+   MODEL REGISTRATION (CRITICAL)
+============================================================ */
 
-export const OrderModel = mongoose.model<IOrder>("Order", OrderSchema);
+// ✅ Default export (mongoose usage)
+const OrderModel =
+  mongoose.models.Order ||
+  mongoose.model<OrderDocument>("Order", OrderSchema);
+
+export default OrderModel;
+
+// ✅ Named export (TypeScript imports across codebase)
+export { OrderModel };

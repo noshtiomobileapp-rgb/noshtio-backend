@@ -1,35 +1,31 @@
 import { Schema, model, Types } from "mongoose";
 
 /* ============================================================
-   Draft Item (STEP 4.3: availability added, backward-safe)
+   DRAFT ITEM
 ============================================================ */
 const DraftItemSchema = new Schema(
   {
     name: { type: String, required: true },
     price: { type: Number, default: null },
     specifications: { type: Array, default: [] },
-
-    // STEP 4.3
     isAvailable: { type: Boolean, default: true },
   },
   { _id: false }
 );
 
 /* ============================================================
-   Draft Category
+   DRAFT CATEGORY
 ============================================================ */
 const DraftCategorySchema = new Schema(
   {
     category: { type: String, required: true },
-    categoryId: { type: Types.ObjectId, default: null },
     items: { type: [DraftItemSchema], required: true },
-    evidence: { type: [String], default: [] },
   },
   { _id: false }
 );
 
 /* ============================================================
-   Snapshot
+   MENU DRAFT SNAPSHOT
 ============================================================ */
 const MenuDraftSnapshotSchema = new Schema(
   {
@@ -39,11 +35,29 @@ const MenuDraftSnapshotSchema = new Schema(
       index: true,
     },
 
+    sourceFile: {
+      name: String,
+      mimeType: String,
+      url: String,
+    },
+
+    rawText: {
+      type: String,
+      required: true,
+    },
+
     mapping: {
       type: [DraftCategorySchema],
       required: true,
     },
 
+    status: {
+      type: String,
+      enum: ["DRAFT", "COMMITTED"],
+      default: "DRAFT",
+    },
+
+    /* COMMIT COMPATIBILITY */
     committedAt: {
       type: Date,
       default: null,
