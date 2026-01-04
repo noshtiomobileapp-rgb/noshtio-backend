@@ -1,9 +1,9 @@
 import express from "express";
-import cors from "cors";
+import cors, { CorsOptions } from "cors";
 import morgan from "morgan";
 
 /* ============================================================
-   FORCE MODULE EXECUTION
+   FORCE MODULE EXECUTION (SIDE-EFFECT IMPORTS)
 ============================================================ */
 import ocrRoutes from "./modules/ocr";
 
@@ -24,37 +24,39 @@ import vendorAnalyticsRoutes from "./modules/menu/analytics/analytics.routes";
 const app = express();
 
 /* ============================================================
-   CORS — PRODUCTION SAFE (CRITICAL)
+   CORS — PRODUCTION SAFE (RENDER + BROWSER)
 ============================================================ */
-const ALLOWED_ORIGINS = [
+const ALLOWED_ORIGINS: string[] = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "https://www.noshtio.com",
   "https://noshtio.com",
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow server-to-server & tools like curl/postman
-      if (!origin) return callback(null, true);
+const corsOptions: CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser clients (Postman, curl, server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
 
-      if (ALLOWED_ORIGINS.includes(origin)) {
-        return callback(null, true);
-      }
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
 
-      return callback(
-        new Error(`CORS blocked for origin: ${origin}`)
-      );
-    },
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  })
-);
+    return callback(
+      new Error(`CORS blocked for origin: ${origin}`)
+    );
+  },
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+};
 
-// 🔥 REQUIRED FOR BROWSER PREFLIGHT (RENDER SAFE)
-app.options("*", cors());
+app.use(cors(corsOptions));
+
+// 🔥 REQUIRED: Browser preflight support (Render safe)
+app.options("*", cors(corsOptions));
 
 /* ============================================================
    GLOBAL MIDDLEWARES
@@ -64,7 +66,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 /* ============================================================
-   REQUEST LOGGING (DEBUG)
+   REQUEST LOGGING (DEBUG — SAFE)
 ============================================================ */
 app.use((req, _res, next) => {
   console.log(`📥 ${req.method} ${req.url}`);
@@ -88,7 +90,7 @@ app.use("/api/vendor", vendorOrdersRoutes);
 app.use("/api/customer/orders", orderRoutes);
 
 /* ============================================================
-   HEALTH CHECK
+   HEALTH CHECK (RENDER)
 ============================================================ */
 app.get("/", (_req, res) => {
   res.status(200).json({
