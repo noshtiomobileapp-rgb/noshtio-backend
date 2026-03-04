@@ -25,39 +25,45 @@ const DraftCategorySchema = new Schema(
 );
 
 /* ============================================================
-   MENU DRAFT SNAPSHOT
+   MENU DRAFT SNAPSHOT (AUTHORITATIVE)
 ============================================================ */
 const MenuDraftSnapshotSchema = new Schema(
   {
+    /* 🔗 OWNERSHIP */
     restaurantId: {
       type: Types.ObjectId,
       required: true,
       index: true,
     },
 
+    /* 📄 SOURCE FILE (OCR INPUT) */
     sourceFile: {
-      name: String,
-      mimeType: String,
-      url: String,
+      name: { type: String },
+      mimeType: { type: String },
+      url: { type: String },
     },
 
+    /* 🧠 OCR RAW TEXT */
     rawText: {
       type: String,
       required: true,
     },
 
+    /* 🗂 PARSED MENU STRUCTURE */
     mapping: {
       type: [DraftCategorySchema],
       required: true,
     },
 
+    /* 🔄 LIFECYCLE */
     status: {
       type: String,
       enum: ["DRAFT", "COMMITTED"],
       default: "DRAFT",
+      index: true,
     },
 
-    /* COMMIT COMPATIBILITY */
+    /* 🔒 COMMIT METADATA (FORWARD COMPATIBLE) */
     committedAt: {
       type: Date,
       default: null,

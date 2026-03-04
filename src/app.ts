@@ -1,102 +1,60 @@
 import express from "express";
-import cors, { CorsOptions } from "cors";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 import morgan from "morgan";
 
-/* ============================================================
-   FORCE MODULE EXECUTION (SIDE-EFFECT IMPORTS)
-============================================================ */
-import ocrRoutes from "./modules/ocr";
-
-/* ============================================================
-   ROUTES
-============================================================ */
 import authRoutes from "./modules/auth/auth.routes";
-import protectedRoutes from "./modules/example/protected.routes";
 import menuRoutes from "./modules/menu/menu.routes";
-import orderRoutes from "./modules/orders/order.routes";
 import vendorOrdersRoutes from "./routes/vendorOrders.routes";
-import menuUploadRoutes from "./routes/menu.upload.routes";
 import vendorAnalyticsRoutes from "./modules/menu/analytics/analytics.routes";
 
-/* ============================================================
-   INIT APP
-============================================================ */
 const app = express();
 
-/* ============================================================
-   CORS — PRODUCTION SAFE (RENDER + BROWSER)
-============================================================ */
-const ALLOWED_ORIGINS: string[] = [
+/*
+============================================================
+   CORS CONFIGURATION
+============================================================
+*/
+const ALLOWED_ORIGINS = [
   "http://localhost:3000",
-  "http://127.0.0.1:3000",
   "https://www.noshtio.com",
   "https://noshtio.com",
 ];
 
-const corsOptions: CorsOptions = {
-  origin: (origin, callback) => {
-    // Allow non-browser clients (Postman, curl, server-to-server)
-    if (!origin) {
-      return callback(null, true);
-    }
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      return callback(new Error("CORS not allowed"));
+    },
+    credentials: true, // REQUIRED for cookies
+  })
+);
 
-    if (ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(
-      new Error(`CORS blocked for origin: ${origin}`)
-    );
-  },
-  credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization"],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-};
-
-app.use(cors(corsOptions));
-
-// 🔥 REQUIRED: Browser preflight support (Render safe)
-app.options("*", cors(corsOptions));
-
-/* ============================================================
-   GLOBAL MIDDLEWARES
-============================================================ */
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+/*
+============================================================
+   GLOBAL MIDDLEWARE (ORDER IS CRITICAL)
+============================================================
+*/
+app.use(cookieParser()); // MUST be before routes to read auth_token
 app.use(morgan("dev"));
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ limit: "20mb", extended: true }));
 
-/* ============================================================
-   REQUEST LOGGING (DEBUG — SAFE)
-============================================================ */
-app.use((req, _res, next) => {
-  console.log(`📥 ${req.method} ${req.url}`);
-  next();
-});
-
-/* ============================================================
-   ROUTE MOUNTS
-============================================================ */
-app.use("/api/ocr", ocrRoutes);
+/*
+============================================================
+   ROUTE MOUNTING
+============================================================
+*/
 app.use("/api/auth", authRoutes);
-app.use("/api/example", protectedRoutes);
-
-// VENDOR
 app.use("/api/vendor/menu", menuRoutes);
-app.use("/api/vendor/menu", menuUploadRoutes);
-app.use("/api/vendor/analytics", vendorAnalyticsRoutes);
 app.use("/api/vendor", vendorOrdersRoutes);
+app.use("/api/vendor/analytics", vendorAnalyticsRoutes);
 
-// CUSTOMER
-app.use("/api/customer/orders", orderRoutes);
-
-/* ============================================================
-   HEALTH CHECK (RENDER)
-============================================================ */
 app.get("/", (_req, res) => {
-  res.status(200).json({
-    status: "OK",
-    message: "Server is running",
-  });
+  res.json({ status: "OK", service: "QRestro API" });
 });
 
 export default app;

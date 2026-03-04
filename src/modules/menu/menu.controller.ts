@@ -3,7 +3,7 @@ import MenuDraftSnapshot from "./menu.snapshot.model";
 
 /* ============================================================
    GET DRAFT SNAPSHOT BY ID
-   (READ-ONLY — NO REVIEW / NO COMMIT)
+   READ-ONLY — NO REVIEW / NO COMMIT
 ============================================================ */
 export const getDraftSnapshot = async (
   req: Request,
@@ -29,20 +29,20 @@ export const getDraftSnapshot = async (
     }
 
     const items =
-      snapshot.mapping?.flatMap((c: any) => c.items || []) ||
-      [];
+      snapshot.mapping?.flatMap((category: any) => category.items || []) ?? [];
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       snapshotId: snapshot._id,
       status: snapshot.status,
       items,
     });
-  } catch (err: any) {
-    console.error("GET DRAFT SNAPSHOT ERROR:", err);
+  } catch (error: any) {
+    console.error("GET DRAFT SNAPSHOT ERROR:", error);
+
     return res.status(500).json({
       success: false,
-      message: err.message || "Failed to load draft snapshot",
+      message: error?.message || "Failed to load draft snapshot",
     });
   }
 };

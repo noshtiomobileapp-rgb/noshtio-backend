@@ -1,114 +1,79 @@
 import { Request, Response, NextFunction } from "express";
-import jwt, { JwtPayload } from "jsonwebtoken";
-
-const JWT_SECRET_RAW = process.env.JWT_SECRET;
-if (!JWT_SECRET_RAW) {
-  throw new Error("JWT_SECRET is not defined");
-}
-const JWT_SECRET: string = JWT_SECRET_RAW;
+import jwt from "jsonwebtoken";
 
 /* ============================================================
    TYPES
 ============================================================ */
-
-export type DecodedUser = JwtPayload & {
-  id: string;
-  role: string;
-  tenantId?: string;
-};
-
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     role: string;
-    tenantId?: string;
   };
 }
 
-/* ============================================================
-   HELPERS
-============================================================ */
-
-function extractToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  return authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : null;
+interface JwtPayload {
+  userId: string;
+  role: string;
 }
 
-function assertDecodedUser(payload: JwtPayload): DecodedUser {
-  if (
-    typeof payload.id !== "string" ||
-    typeof payload.role !== "string"
-  ) {
-    throw new Error("Invalid JWT payload");
+/* ============================================================
+   CORE AUTH LOGIC (INTERNAL)
+============================================================ */
+const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
+  try {
+    const token = req.cookies?.auth_token;
+    if (!token) return false;
+
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) return false;
+
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+
+    req.user = {
+      id: decoded.userId,
+      role: decoded.role,
+    };
+
+    return true;
+  } catch {
+    return false;
   }
-  return payload as DecodedUser;
-}
+};
 
 /* ============================================================
-   AUTH MIDDLEWARE
+   AUTHENTICATE (STRICT) — named export
 ============================================================ */
-
-export function authMiddleware(
+export const authenticate = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) {
-  try {
-    const token = extractToken(req);
-    if (!token) {
-      return res.status(401).json({ message: "Unauthorized: Token missing" });
-    }
+) => {
+  const ok = attachUserIfValid(req);
 
-    const verified = jwt.verify(token, JWT_SECRET);
-    if (typeof verified !== "object") {
-      return res.status(401).json({ message: "Unauthorized: Invalid token" });
-    }
-
-    const decoded = assertDecodedUser(verified);
-
-    req.user = {
-      id: decoded.id,
-      role: decoded.role,
-      tenantId: decoded.tenantId, // optional
-    };
-
-    next();
-  } catch {
+  if (!ok) {
     return res.status(401).json({
-      message: "Unauthorized: Invalid or expired token",
+      success: false,
+      message: "Not authenticated",
     });
   }
-}
+
+  next();
+};
 
 /* ============================================================
-   OPTIONAL AUTH
+   OPTIONAL AUTH — named export
 ============================================================ */
-
-export function optionalAuth(
+export const optionalAuth = (
   req: AuthenticatedRequest,
   _res: Response,
   next: NextFunction
-) {
-  try {
-    const token = extractToken(req);
-    if (!token) return next();
-
-    const verified = jwt.verify(token, JWT_SECRET);
-    if (typeof verified !== "object") return next();
-
-    const decoded = assertDecodedUser(verified);
-
-    req.user = {
-      id: decoded.id,
-      role: decoded.role,
-      tenantId: decoded.tenantId,
-    };
-  } catch {
-    // ignore
-  }
+) => {
+  attachUserIfValid(req);
   next();
-}
+};
 
+/* ============================================================
+   DEFAULT EXPORT — REQUIRED BY MULTIPLE MODULES
+============================================================ */
+const authMiddleware = authenticate;
 export default authMiddleware;

@@ -1,4 +1,8 @@
-import "dotenv/config";
+/* ============================================================
+   ENV LOADING — MUST BE FIRST
+============================================================ */
+import dotenv from "dotenv";
+dotenv.config();
 
 /* ============================================================
    CORE IMPORTS
@@ -27,6 +31,11 @@ if (!process.env.MONGO_URI) {
   process.exit(1);
 }
 
+if (!process.env.JWT_SECRET) {
+  logger.error("❌ ERROR: JWT_SECRET is missing");
+  process.exit(1);
+}
+
 /* ============================================================
    SERVER BOOTSTRAP
 ============================================================ */
@@ -36,8 +45,9 @@ async function startServer() {
     await seedRoles();
 
     app.listen(PORT, () => {
+      logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(
-        `🚀 Server running on port ${PORT}`
+        `🔐 JWT_SECRET loaded: ${process.env.JWT_SECRET?.slice(0, 6)}******`
       );
     });
   } catch (error: any) {

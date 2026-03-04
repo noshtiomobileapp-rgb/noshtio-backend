@@ -1,6 +1,13 @@
 import { Response, NextFunction } from "express";
 import { AuthenticatedRequest } from "./auth.middleware";
 
+/**
+ * Vendor Guard — MVP Safe
+ *
+ * Rule:
+ * - User MUST be authenticated
+ * - Role enforcement intentionally deferred
+ */
 export function vendorGuard(
   req: AuthenticatedRequest,
   res: Response,
@@ -8,16 +15,12 @@ export function vendorGuard(
 ) {
   if (!req.user) {
     return res.status(401).json({
+      success: false,
       message: "Unauthorized: Authentication required",
     });
   }
 
-  /**
-   * MVP rule:
-   * If a user is authenticated and accessing vendor routes,
-   * allow access. Role hard-check can be enforced later
-   * once role issuance is fully standardized.
-   */
+  // MVP: allow authenticated users accessing vendor routes
   next();
 }
 

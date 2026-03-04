@@ -2,15 +2,17 @@ import { Request, Response } from "express";
 import MenuDraftSnapshot from "../modules/menu/menu.snapshot.model";
 import { handleImageOcrUpload } from "../modules/menu/ocr.service";
 import MenuParser from "../modules/menu/menu.parser";
+import Vendor from "../models/Vendor.model";
 
 /* ============================================================
-   UPLOAD MENU (OCR → DRAFT SNAPSHOT)
+   UPLOAD MENU → OCR → DRAFT SNAPSHOT
 ============================================================ */
 export const uploadMenuController = async (
-  req: Request,
+  req: Request & { user?: { id: string } },
   res: Response
 ) => {
   try {
+    /* 1️⃣ FILE VALIDATION */
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -18,36 +20,46 @@ export const uploadMenuController = async (
       });
     }
 
-    const restaurantId = (req as any).user?.tenantId;
-    if (!restaurantId) {
+    /* 2️⃣ AUTH VALIDATION */
+    const userId = req.user?.id;
+    if (!userId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
       });
     }
 
-    /* OCR → RAW TEXT */
+    /* 3️⃣ VENDOR OWNERSHIP */
+    const vendor = await Vendor.findOne({ user: userId });
+    if (!vendor) {
+      return res.status(403).json({
+        success: false,
+        message: "Vendor profile not found",
+      });
+    }
+
+    /* 4️⃣ OCR PROCESSING */
     const ocrResult = await handleImageOcrUpload(
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype
     );
 
-    if (!ocrResult.rawText?.trim()) {
+    if (!ocrResult?.rawText?.trim()) {
       return res.status(422).json({
         success: false,
         message: "OCR produced no readable text",
       });
     }
 
-    /* PARSE INTO MENU STRUCTURE */
+    /* 5️⃣ MENU PARSING */
     const mapping = MenuParser.parseTextToMenu(
       ocrResult.rawText
     );
 
-    /* CREATE DRAFT SNAPSHOT */
+    /* 6️⃣ SNAPSHOT CREATION (SINGLE SOURCE OF TRUTH) */
     const snapshot = await MenuDraftSnapshot.create({
-      restaurantId,
+      restaurantId: vendor._id,
       sourceFile: {
         name: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -61,54 +73,69 @@ export const uploadMenuController = async (
     });
 
     const items =
-      mapping.flatMap((c: any) => c.items || []) || [];
+      mapping?.flatMap((c: any) => c.items || []) || [];
 
-    return res.json({
+    return res.status(201).json({
       success: true,
       snapshotId: snapshot._id,
-      items,
       status: "DRAFT",
+      items,
     });
   } catch (err: any) {
     console.error("MENU UPLOAD ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: err.message || "Menu upload failed",
+      message: err?.message || "Menu upload failed",
     });
   }
 };
 
 /* ============================================================
-   GET LATEST DRAFT SNAPSHOT
+   GET LATEST ACTIVE DRAFT SNAPSHOT
 ============================================================ */
 export const getCurrentMenuSnapshot = async (
-  req: any,
+  req: Request & { user?: { id: string } },
   res: Response
 ) => {
-  const restaurantId = req.user?.tenantId;
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
-  if (!restaurantId) {
-    return res.status(401).json({
+    const vendor = await Vendor.findOne({ user: userId });
+    if (!vendor) {
+      return res.status(403).json({
+        success: false,
+        message: "Vendor profile not found",
+      });
+    }
+
+    const draft = await MenuDraftSnapshot.findOne({
+      restaurantId: vendor._id,
+      status: "DRAFT",
+    }).sort({ createdAt: -1 });
+
+    if (!draft) {
+      return res.status(200).json(null);
+    }
+
+    const items =
+      draft.mapping?.flatMap((c: any) => c.items || []) || [];
+
+    return res.status(200).json({
+      snapshotId: draft._id,
+      status: "DRAFT",
+      items,
+    });
+  } catch (err) {
+    console.error("GET CURRENT SNAPSHOT ERROR:", err);
+    return res.status(500).json({
       success: false,
-      message: "Unauthorized",
+      message: "Failed to load menu snapshot",
     });
   }
-
-  const draft = await MenuDraftSnapshot.findOne({
-    restaurantId,
-    status: "DRAFT",
-  }).sort({ createdAt: -1 });
-
-  if (!draft) {
-    return res.json(null);
-  }
-
-  const items =
-    draft.mapping?.flatMap((c: any) => c.items || []) || [];
-
-  return res.json({
-    snapshotId: draft._id,
-    items,
-    status: "DRAFT",
-  });
 };

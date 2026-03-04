@@ -1,18 +1,34 @@
-// src/modules/menu/models/menu.model.ts
-import mongoose, { Document, Model } from "mongoose";
+import { Router } from "express";
+import Menu from "../models/Menu.model";
 
-export interface IMenuItem extends Document {
-  name: string;
-  price: number;
-  category?: string;
-}
+const router = Router();
 
-const MenuSchema = new mongoose.Schema<IMenuItem>({
-  name: { type: String, required: true },
-  price: { type: Number, required: true },
-  category: { type: String },
-}, { timestamps: true });
+/* ============================================================
+   PUBLIC MENU ROUTES
+============================================================ */
 
-const Menu: Model<IMenuItem> = mongoose.models.Menu || mongoose.model<IMenuItem>("Menu", MenuSchema);
+/**
+ * GET /api/menu/:vendorId
+ * Public menu for customers
+ */
+router.get("/:vendorId", async (req, res) => {
+  try {
+    const { vendorId } = req.params;
 
-export default Menu;
+    const menu = await Menu.findOne({
+      vendorId,
+      isActive: true,
+    }).lean();
+
+    if (!menu) {
+      return res.status(404).json({ success: false });
+    }
+
+    return res.json(menu);
+  } catch (err) {
+    console.error("GET /api/menu failed", err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+export default router;

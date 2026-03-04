@@ -1,20 +1,38 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-export interface VendorDocument extends Document {
+export interface IVendor extends Document {
+  user: mongoose.Types.ObjectId;
   name: string;
   email: string;
-  password: string;
   role: "vendor";
+  createdAt: Date;
+  updatedAt: Date;
 }
 
-const VendorSchema = new Schema<VendorDocument>(
+const VendorSchema = new Schema<IVendor>(
   {
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    role: { type: String, default: "vendor" },
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+    },
+    name: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    role: {
+      type: String,
+      enum: ["vendor"],
+      default: "vendor",
+    },
   },
   { timestamps: true }
 );
 
-export default mongoose.model<VendorDocument>("Vendor", VendorSchema);
+export default mongoose.model<IVendor>("Vendor", VendorSchema);

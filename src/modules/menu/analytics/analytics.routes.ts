@@ -1,12 +1,24 @@
 import { Router } from "express";
-import authMiddleware from "../../../middleware/auth.middleware";
-import vendorGuard from "../../../middleware/vendor.guard";
+
+/* 🔐 AUTH MIDDLEWARE — SINGLE SOURCE OF TRUTH */
+import { authenticate } from "../../../middleware/auth.middleware";
+
 import { getVendorAnalyticsSummary } from "./analytics.controller";
 
 const router = Router();
 
-router.use(authMiddleware, vendorGuard);
+/* ============================================================
+   ANALYTICS ROUTES (AUTHENTICATED)
+============================================================ */
 
-router.get("/summary", getVendorAnalyticsSummary);
+/**
+ * Vendor analytics summary
+ * GET /api/vendor/analytics/summary
+ */
+router.get(
+  "/summary",
+  authenticate,
+  getVendorAnalyticsSummary
+);
 
 export default router;

@@ -1,66 +1,59 @@
-// src/modules/menu/menu.service.ts
-import Menu from "./menu.model";
+import { Router } from "express";
+import multer from "multer";
 
-export interface ParsedMenuCategory {
-  name: string;
-  items: {
-    name: string;
-    price?: number | null;
-    description?: string;
-  }[];
-}
+/* 🔐 AUTH MIDDLEWARE */
+import { authenticate } from "../../middleware/auth.middleware";
 
-export default class MenuService {
-  async saveMenu(vendorId: string, menu: { categories: ParsedMenuCategory[] }) {
-    const categories = Array.isArray(menu?.categories)
-      ? menu.categories.map((c) => ({
-          name: c.name,
-          items: Array.isArray(c.items)
-            ? c.items.map((i) => ({
-                name: i.name,
-                price: i.price ?? null,
-                description: i.description ?? "",
-              }))
-            : [],
-        }))
-      : [];
+import {
+  uploadMenuController,
+  getCurrentMenuSnapshot,
+} from "../../controllers/menu.upload.controller";
 
-    return Menu.findOneAndUpdate(
-      { vendorId },
-      { vendorId, categories, updatedAt: new Date() },
-      { upsert: true, new: true }
-    );
-  }
+import { getDraftSnapshot } from "./menu.controller";
 
-  async createManualMenu({
-    vendorId,
-    categoryName,
-    itemName,
-    price,
-    description,
-  }: {
-    vendorId: string;
-    categoryName: string;
-    itemName: string;
-    price?: number;
-    description?: string;
-  }) {
-    return Menu.create({
-      vendorId,
-      categories: [
-        {
-          name: categoryName,
-          items: [{ name: itemName, price, description }],
-        },
-      ],
-    });
-  }
+const router = Router();
 
-  async getMenu(vendorId: string) {
-    return Menu.findOne({ vendorId });
-  }
+/* ============================================================
+   MULTER CONFIG — MEMORY STORAGE
+============================================================ */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+});
 
-  async getMenuByRestaurant(restaurantId: string) {
-    return Menu.findOne({ restaurantId });
-  }
-}
+/* ============================================================
+   MENU ROUTES — AUTHENTICATED
+============================================================ */
+
+/**
+ * Upload menu image
+ * Field name MUST be "menu"
+ */
+router.post(
+  "/upload",
+  authenticate,
+  upload.single("menu"),
+  uploadMenuController
+);
+
+/**
+ * Get latest draft snapshot
+ */
+router.get(
+  "/current",
+  authenticate,
+  getCurrentMenuSnapshot
+);
+
+/**
+ * Get draft snapshot by ID (read-only)
+ */
+router.get(
+  "/draft/:snapshotId",
+  authenticate,
+  getDraftSnapshot
+);
+
+export default router;
