@@ -6,7 +6,6 @@ const authService = new AuthService();
 /* ============================================================
    REGISTER
 ============================================================ */
-
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, email, password } = req.body;
@@ -27,19 +26,12 @@ export const register = async (req: Request, res: Response) => {
 };
 
 /* ============================================================
-   LOGIN — 🔒 CONTRACT-CORRECT (FINAL)
+   LOGIN
 ============================================================ */
-
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    /**
-     * AuthService.login() MUST return:
-     * {
-     *   token: string
-     * }
-     */
     const result = await authService.login(email, password);
 
     if (!result || !result.token) {
@@ -49,7 +41,6 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    // ✅ RETURN TOKEN IN RESPONSE (NON-NEGOTIABLE)
     return res.status(200).json({
       success: true,
       token: result.token,
@@ -65,7 +56,6 @@ export const login = async (req: Request, res: Response) => {
 /* ============================================================
    LOGOUT
 ============================================================ */
-
 export const logout = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || req.body.userId;
@@ -75,6 +65,32 @@ export const logout = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       ...result,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/* ============================================================
+   GET CURRENT USER
+============================================================ */
+export const getCurrentUser = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user,
     });
   } catch (error: any) {
     return res.status(500).json({
