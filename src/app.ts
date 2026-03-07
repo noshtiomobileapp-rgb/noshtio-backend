@@ -49,8 +49,8 @@ app.use(express.urlencoded({ limit: "20mb", extended: true }));
 ============================================================
 */
 app.use("/api/auth", authRoutes);
-app.use("/api/vendor/menu", menuRoutes);
-app.use("/api/vendor", vendorOrdersRoutes);
+app.use("/api/menu", menuRoutes);
+app.use("/api/orders", vendorOrdersRoutes);
 app.use("/api/vendor/analytics", vendorAnalyticsRoutes);
 
 app.get("/", (_req, res) => {
