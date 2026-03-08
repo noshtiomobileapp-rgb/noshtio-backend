@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 /* ============================================================
-   AUTH USER TYPE (COMPATIBLE WITH OLD ROUTES)
+   AUTH USER TYPE (BACKWARD COMPATIBLE)
 ============================================================ */
 
 export interface AuthUser {
@@ -58,14 +58,10 @@ const verifyToken = (token: string): JwtPayload | null => {
   try {
     const secret = process.env.JWT_SECRET;
 
-    if (!secret) {
-      console.error("JWT_SECRET missing");
-      return null;
-    }
+    if (!secret) return null;
 
     return jwt.verify(token, secret) as JwtPayload;
-  } catch (err) {
-    console.error("JWT verification failed:", err);
+  } catch {
     return null;
   }
 };
@@ -126,9 +122,5 @@ export const optionalAuth = (
   attachUser(req);
   next();
 };
-
-/* ============================================================
-   DEFAULT EXPORT
-============================================================ */
 
 export default authenticate;
