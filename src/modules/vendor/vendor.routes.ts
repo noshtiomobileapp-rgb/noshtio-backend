@@ -4,12 +4,11 @@ import { requireAuth } from "../../middleware/requireAuth";
 const router = Router();
 
 /* ============================================================
-   VENDOR BASE ROUTES
+   GET CURRENT VENDOR
 ============================================================ */
 
 router.get("/me", requireAuth, async (req: Request, res: Response) => {
   try {
-
     if (!req.user) {
       return res.status(401).json({
         success: false,
@@ -20,19 +19,15 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
     return res.json({
       success: true,
       vendorId: req.user.id,
-      userId: req.user.id,
       role: req.user.role,
     });
-
   } catch (error) {
-
     console.error("Vendor /me error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Server error",
     });
-
   }
 });
 

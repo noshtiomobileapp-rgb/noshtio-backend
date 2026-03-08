@@ -24,7 +24,10 @@ interface JwtPayload {
 }
 
 /* ============================================================
-   REQUIRE AUTH — COOKIE BASED
+   REQUIRE AUTH
+   Supports:
+   - Authorization: Bearer token
+   - Cookie auth_token
 ============================================================ */
 export const requireAuth = (
   req: Request,
@@ -32,7 +35,19 @@ export const requireAuth = (
   next: NextFunction
 ): Response | void => {
   try {
-    const token = req.cookies?.auth_token;
+    let token: string | undefined;
+
+    /* ---------- Bearer token ---------- */
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    /* ---------- Cookie fallback ---------- */
+    if (!token) {
+      token = req.cookies?.auth_token;
+    }
 
     if (!token) {
       return res.status(401).json({
@@ -44,8 +59,6 @@ export const requireAuth = (
     const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
-      console.error("JWT_SECRET missing in environment variables");
-
       return res.status(500).json({
         success: false,
         message: "Server configuration error",
@@ -54,9 +67,6 @@ export const requireAuth = (
 
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
 
-    /* ============================================================
-       ATTACH AUTH DATA TO REQUEST
-    ============================================================ */
     req.user = {
       id: decoded.userId,
       role: decoded.role,
