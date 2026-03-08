@@ -11,7 +11,7 @@ import Vendor from "../../models/Vendor.model";
 const COOKIE_NAME = "auth_token";
 
 /* ============================================================
-   COOKIE OPTIONS
+   COOKIE CONFIG
 ============================================================ */
 
 const cookieOptions = {
@@ -55,21 +55,13 @@ export const register = async (req: Request, res: Response) => {
       role,
     });
 
-    /* Create vendor profile automatically */
-
     if (role === "vendor") {
-      const existingVendor = await Vendor.findOne({
+      await Vendor.create({
         user: newUser._id,
+        name,
+        email,
+        status: "ACTIVE",
       });
-
-      if (!existingVendor) {
-        await Vendor.create({
-          user: newUser._id,
-          name,
-          email,
-          status: "ACTIVE",
-        });
-      }
     }
 
     return res.status(201).json({
@@ -97,7 +89,7 @@ export const login = async (req: Request, res: Response) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: "Email and password are required",
+        message: "Email and password required",
       });
     }
 
@@ -110,40 +102,42 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const match = await bcrypt.compare(password, user.password);
 
-    if (!isMatch) {
+    if (!match) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET;
+    let vendorId: string | undefined;
 
-    if (!JWT_SECRET) {
-      console.error("JWT_SECRET missing");
+    if (user.role === "vendor") {
+      const vendor = await Vendor.findOne({ user: user._id });
+      vendorId = vendor?._id?.toString();
+    }
 
+    const secret = process.env.JWT_SECRET;
+
+    if (!secret) {
       return res.status(500).json({
         success: false,
-        message: "Server configuration error",
+        message: "JWT configuration missing",
       });
     }
 
     const token = jwt.sign(
       {
         userId: user._id.toString(),
+        vendorId,
         role: user.role,
       },
-      JWT_SECRET,
+      secret,
       { expiresIn: "1d" }
     );
 
-    /* Set auth cookie */
-
     res.cookie(COOKIE_NAME, token, cookieOptions);
-
-    /* Send token to frontend */
 
     return res.status(200).json({
       success: true,
@@ -153,6 +147,7 @@ export const login = async (req: Request, res: Response) => {
         id: user._id,
         email: user.email,
         role: user.role,
+        vendorId,
       },
     });
   } catch (error) {
@@ -169,29 +164,20 @@ export const login = async (req: Request, res: Response) => {
    CURRENT USER
 ============================================================ */
 
-export const getCurrentUser = async (req: Request, res: Response) => {
-  try {
-    const user = (req as any).user;
+export const getCurrentUser = (req: Request, res: Response) => {
+  const user = (req as any).user;
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "Not authenticated",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      user,
-    });
-  } catch (error) {
-    console.error("Get current user error:", error);
-
-    return res.status(500).json({
+  if (!user) {
+    return res.status(401).json({
       success: false,
-      message: "Server error",
+      message: "Not authenticated",
     });
   }
+
+  return res.json({
+    success: true,
+    user,
+  });
 };
 
 /* ============================================================
@@ -201,8 +187,8 @@ export const getCurrentUser = async (req: Request, res: Response) => {
 export const logout = (_req: Request, res: Response) => {
   res.clearCookie(COOKIE_NAME, { path: "/" });
 
-  return res.status(200).json({
+  return res.json({
     success: true,
-    message: "Logged out successfully",
+    message: "Logged out",
   });
 };

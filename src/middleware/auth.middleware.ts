@@ -1,19 +1,27 @@
 import { Request, Response, NextFunction } from "express";
-import jwt, { JwtPayload as BaseJwtPayload } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 
 /* ============================================================
-   TYPES
+   AUTH USER TYPE
 ============================================================ */
 
-export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    role: string;
-  };
+export interface AuthUser {
+  userId: string;
+  vendorId?: string;
+  role: string;
 }
 
-interface JwtPayload extends BaseJwtPayload {
+export interface AuthenticatedRequest extends Request {
+  user?: AuthUser;
+}
+
+/* ============================================================
+   JWT PAYLOAD TYPE
+============================================================ */
+
+interface JwtPayload {
   userId: string;
+  vendorId?: string;
   role: string;
 }
 
@@ -23,18 +31,17 @@ interface JwtPayload extends BaseJwtPayload {
 
 const extractToken = (req: Request): string | null => {
   try {
-    /* 1️⃣ Authorization Header */
-
     const authHeader = req.headers.authorization;
 
     if (authHeader && authHeader.startsWith("Bearer ")) {
       return authHeader.split(" ")[1];
     }
 
-    /* 2️⃣ Cookie */
+    // cookie-parser adds cookies to req
+    const cookies = (req as any).cookies;
 
-    if (req.cookies?.auth_token) {
-      return req.cookies.auth_token;
+    if (cookies?.auth_token) {
+      return cookies.auth_token;
     }
 
     return null;
@@ -44,44 +51,49 @@ const extractToken = (req: Request): string | null => {
 };
 
 /* ============================================================
-   CORE AUTH LOGIC
+   VERIFY TOKEN
 ============================================================ */
 
-const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
+const verifyToken = (token: string): JwtPayload | null => {
   try {
-    const token = extractToken(req);
+    const secret = process.env.JWT_SECRET;
 
-    if (!token) {
-      return false;
+    if (!secret) {
+      console.error("JWT_SECRET missing");
+      return null;
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET;
-
-    if (!JWT_SECRET) {
-      console.error("❌ JWT_SECRET missing in environment");
-      return false;
-    }
-
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
-
-    if (!decoded || !decoded.userId) {
-      return false;
-    }
-
-    req.user = {
-      id: decoded.userId,
-      role: decoded.role,
-    };
-
-    return true;
-  } catch (error) {
-    console.error("JWT verification failed:", error);
-    return false;
+    return jwt.verify(token, secret) as JwtPayload;
+  } catch (err) {
+    console.error("JWT verification failed:", err);
+    return null;
   }
 };
 
 /* ============================================================
-   AUTHENTICATE (STRICT)
+   ATTACH USER
+============================================================ */
+
+const attachUser = (req: AuthenticatedRequest): boolean => {
+  const token = extractToken(req);
+
+  if (!token) return false;
+
+  const decoded = verifyToken(token);
+
+  if (!decoded) return false;
+
+  req.user = {
+    userId: decoded.userId,
+    vendorId: decoded.vendorId,
+    role: decoded.role,
+  };
+
+  return true;
+};
+
+/* ============================================================
+   STRICT AUTH
 ============================================================ */
 
 export const authenticate = (
@@ -89,7 +101,7 @@ export const authenticate = (
   res: Response,
   next: NextFunction
 ) => {
-  const ok = attachUserIfValid(req);
+  const ok = attachUser(req);
 
   if (!ok) {
     return res.status(401).json({
@@ -110,7 +122,7 @@ export const optionalAuth = (
   _res: Response,
   next: NextFunction
 ) => {
-  attachUserIfValid(req);
+  attachUser(req);
   next();
 };
 
@@ -118,6 +130,4 @@ export const optionalAuth = (
    DEFAULT EXPORT
 ============================================================ */
 
-const authMiddleware = authenticate;
-
-export default authMiddleware;
+export default authenticate;
