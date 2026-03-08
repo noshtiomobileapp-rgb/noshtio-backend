@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { requireAuth } from "../../middleware/requireAuth";
+import { requireAuth } from "../middleware/requireAuth";
 
 const router = Router();
 
@@ -18,10 +18,11 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      vendorId: req.user.id,
-      userId: req.user.id,
+      vendorId: req.user.vendorId || req.user.id,
+      userId: req.user.userId || req.user.id,
       role: req.user.role,
     });
+
   } catch (error) {
     console.error("Vendor /me error:", error);
 
