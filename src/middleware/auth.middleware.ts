@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 /* ============================================================
    TYPES
 ============================================================ */
+
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -17,15 +18,43 @@ interface JwtPayload {
 }
 
 /* ============================================================
-   CORE AUTH LOGIC (INTERNAL)
+   TOKEN EXTRACTOR
 ============================================================ */
+
+const extractToken = (req: Request): string | null => {
+  /* 1️⃣ Authorization Header */
+
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.split(" ")[1];
+  }
+
+  /* 2️⃣ Cookie */
+
+  if (req.cookies?.auth_token) {
+    return req.cookies.auth_token;
+  }
+
+  return null;
+};
+
+/* ============================================================
+   CORE AUTH LOGIC
+============================================================ */
+
 const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
   try {
-    const token = req.cookies?.auth_token;
+    const token = extractToken(req);
+
     if (!token) return false;
 
     const JWT_SECRET = process.env.JWT_SECRET;
-    if (!JWT_SECRET) return false;
+
+    if (!JWT_SECRET) {
+      console.error("JWT_SECRET missing");
+      return false;
+    }
 
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
 
@@ -35,14 +64,15 @@ const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
     };
 
     return true;
-  } catch {
+  } catch (error) {
     return false;
   }
 };
 
 /* ============================================================
-   AUTHENTICATE (STRICT) — named export
+   AUTHENTICATE (STRICT)
 ============================================================ */
+
 export const authenticate = (
   req: AuthenticatedRequest,
   res: Response,
@@ -61,8 +91,9 @@ export const authenticate = (
 };
 
 /* ============================================================
-   OPTIONAL AUTH — named export
+   OPTIONAL AUTH
 ============================================================ */
+
 export const optionalAuth = (
   req: AuthenticatedRequest,
   _res: Response,
@@ -73,7 +104,8 @@ export const optionalAuth = (
 };
 
 /* ============================================================
-   DEFAULT EXPORT — REQUIRED BY MULTIPLE MODULES
+   DEFAULT EXPORT
 ============================================================ */
+
 const authMiddleware = authenticate;
 export default authMiddleware;
