@@ -2,13 +2,14 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 /* ============================================================
-   AUTH USER TYPE
+   AUTH USER TYPE (COMPATIBLE WITH OLD ROUTES)
 ============================================================ */
 
 export interface AuthUser {
-  userId: string;
-  vendorId?: string;
+  id: string;
   role: string;
+  userId?: string;
+  vendorId?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -16,7 +17,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /* ============================================================
-   JWT PAYLOAD TYPE
+   JWT PAYLOAD
 ============================================================ */
 
 interface JwtPayload {
@@ -37,7 +38,6 @@ const extractToken = (req: Request): string | null => {
       return authHeader.split(" ")[1];
     }
 
-    // cookie-parser adds cookies to req
     const cookies = (req as any).cookies;
 
     if (cookies?.auth_token) {
@@ -84,6 +84,7 @@ const attachUser = (req: AuthenticatedRequest): boolean => {
   if (!decoded) return false;
 
   req.user = {
+    id: decoded.userId,
     userId: decoded.userId,
     vendorId: decoded.vendorId,
     role: decoded.role,
