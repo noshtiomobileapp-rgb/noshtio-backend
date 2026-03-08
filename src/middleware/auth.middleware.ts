@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import jwt, { JwtPayload as BaseJwtPayload } from "jsonwebtoken";
 
 /* ============================================================
    TYPES
@@ -12,7 +12,7 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
-interface JwtPayload {
+interface JwtPayload extends BaseJwtPayload {
   userId: string;
   role: string;
 }
@@ -22,21 +22,25 @@ interface JwtPayload {
 ============================================================ */
 
 const extractToken = (req: Request): string | null => {
-  /* 1️⃣ Authorization Header */
+  try {
+    /* 1️⃣ Authorization Header */
 
-  const authHeader = req.headers.authorization;
+    const authHeader = req.headers.authorization;
 
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    return authHeader.split(" ")[1];
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.split(" ")[1];
+    }
+
+    /* 2️⃣ Cookie */
+
+    if (req.cookies?.auth_token) {
+      return req.cookies.auth_token;
+    }
+
+    return null;
+  } catch {
+    return null;
   }
-
-  /* 2️⃣ Cookie */
-
-  if (req.cookies?.auth_token) {
-    return req.cookies.auth_token;
-  }
-
-  return null;
 };
 
 /* ============================================================
@@ -47,16 +51,22 @@ const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
   try {
     const token = extractToken(req);
 
-    if (!token) return false;
+    if (!token) {
+      return false;
+    }
 
     const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
-      console.error("JWT_SECRET missing");
+      console.error("❌ JWT_SECRET missing in environment");
       return false;
     }
 
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+
+    if (!decoded || !decoded.userId) {
+      return false;
+    }
 
     req.user = {
       id: decoded.userId,
@@ -65,6 +75,7 @@ const attachUserIfValid = (req: AuthenticatedRequest): boolean => {
 
     return true;
   } catch (error) {
+    console.error("JWT verification failed:", error);
     return false;
   }
 };
@@ -83,7 +94,7 @@ export const authenticate = (
   if (!ok) {
     return res.status(401).json({
       success: false,
-      message: "Not authenticated",
+      message: "Unauthorized",
     });
   }
 
@@ -108,4 +119,5 @@ export const optionalAuth = (
 ============================================================ */
 
 const authMiddleware = authenticate;
+
 export default authMiddleware;
