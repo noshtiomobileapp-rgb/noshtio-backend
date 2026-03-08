@@ -7,14 +7,16 @@ import Vendor from "../../models/Vendor.model";
 /* ============================================================
    CONSTANTS
 ============================================================ */
+
 const COOKIE_NAME = "auth_token";
 
 /* ============================================================
    COOKIE OPTIONS
 ============================================================ */
+
 const cookieOptions = {
   httpOnly: true,
-  secure: false, // set true in production with HTTPS
+  secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
   maxAge: 24 * 60 * 60 * 1000,
@@ -23,6 +25,7 @@ const cookieOptions = {
 /* ============================================================
    REGISTER
 ============================================================ */
+
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, email, password, role } = req.body;
@@ -52,7 +55,8 @@ export const register = async (req: Request, res: Response) => {
       role,
     });
 
-    /* CREATE VENDOR PROFILE */
+    /* Create vendor profile automatically */
+
     if (role === "vendor") {
       const existingVendor = await Vendor.findOne({
         user: newUser._id,
@@ -85,6 +89,7 @@ export const register = async (req: Request, res: Response) => {
 /* ============================================================
    LOGIN
 ============================================================ */
+
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -134,11 +139,21 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: "1d" }
     );
 
+    /* Set auth cookie */
+
     res.cookie(COOKIE_NAME, token, cookieOptions);
+
+    /* Send token to frontend */
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -153,6 +168,7 @@ export const login = async (req: Request, res: Response) => {
 /* ============================================================
    CURRENT USER
 ============================================================ */
+
 export const getCurrentUser = async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -181,6 +197,7 @@ export const getCurrentUser = async (req: Request, res: Response) => {
 /* ============================================================
    LOGOUT
 ============================================================ */
+
 export const logout = (_req: Request, res: Response) => {
   res.clearCookie(COOKIE_NAME, { path: "/" });
 
