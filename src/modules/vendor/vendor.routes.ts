@@ -13,7 +13,7 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -21,7 +21,7 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
       success: true,
       vendorId: req.user.id,
       userId: req.user.id,
-      role: req.user.role
+      role: req.user.role,
     });
 
   } catch (error) {
@@ -30,7 +30,7 @@ router.get("/me", requireAuth, async (req: Request, res: Response) => {
 
     return res.status(500).json({
       success: false,
-      message: "Server error"
+      message: "Server error",
     });
 
   }
