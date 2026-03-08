@@ -2,7 +2,21 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 /* ============================================================
-   TYPES
+   EXTEND EXPRESS REQUEST TYPE
+============================================================ */
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        role: string;
+      };
+    }
+  }
+}
+
+/* ============================================================
+   JWT PAYLOAD TYPE
 ============================================================ */
 interface JwtPayload {
   userId: string;
@@ -10,13 +24,13 @@ interface JwtPayload {
 }
 
 /* ============================================================
-   REQUIRE AUTH — COOKIE BASED (TYPE SAFE)
+   REQUIRE AUTH — COOKIE BASED
 ============================================================ */
 export const requireAuth = (
   req: Request,
   res: Response,
   next: NextFunction
-) => {
+): Response | void => {
   try {
     const token = req.cookies?.auth_token;
 
@@ -28,7 +42,10 @@ export const requireAuth = (
     }
 
     const JWT_SECRET = process.env.JWT_SECRET;
+
     if (!JWT_SECRET) {
+      console.error("JWT_SECRET missing in environment variables");
+
       return res.status(500).json({
         success: false,
         message: "Server configuration error",
@@ -38,7 +55,7 @@ export const requireAuth = (
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
 
     /* ============================================================
-       ATTACH AUTH CONTEXT ONLY (NOT MONGOOSE DOC)
+       ATTACH AUTH DATA TO REQUEST
     ============================================================ */
     req.user = {
       id: decoded.userId,
@@ -47,6 +64,8 @@ export const requireAuth = (
 
     next();
   } catch (error) {
+    console.error("Auth verification failed:", error);
+
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",
