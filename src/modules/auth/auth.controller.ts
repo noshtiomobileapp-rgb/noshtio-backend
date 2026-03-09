@@ -20,7 +20,7 @@ const cookieOptions = {
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 24 * 60 * 60 * 1000, // 1 day
+  maxAge: 24 * 60 * 60 * 1000,
 };
 
 /* ============================================================
@@ -38,7 +38,7 @@ export const register = async (req: Request, res: Response) => {
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email }).lean();
 
     if (existingUser) {
       return res.status(400).json({
@@ -55,10 +55,6 @@ export const register = async (req: Request, res: Response) => {
       password: hashedPassword,
       role,
     });
-
-    /* ---------------------------------------------------------
-       CREATE VENDOR PROFILE IF ROLE = VENDOR
-    --------------------------------------------------------- */
 
     if (role === "vendor") {
       const vendorExists = await Vendor.findOne({ user: newUser._id });
@@ -77,6 +73,7 @@ export const register = async (req: Request, res: Response) => {
       success: true,
       message: "User registered successfully",
     });
+
   } catch (error) {
     console.error("Register error:", error);
 
@@ -93,6 +90,7 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -104,16 +102,16 @@ export const login = async (req: Request, res: Response) => {
 
     const user = await User.findOne({ email });
 
-    if (!user) {
+    if (!user || !user.password) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const passwordMatch = await bcrypt.compare(password, user.password);
 
-    if (!isMatch) {
+    if (!passwordMatch) {
       return res.status(401).json({
         success: false,
         message: "Invalid credentials",
@@ -131,11 +129,7 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    /* ---------------------------------------------------------
-       FETCH VENDOR PROFILE (IF VENDOR USER)
-    --------------------------------------------------------- */
-
-    let vendorId: string | undefined = undefined;
+    let vendorId: string | undefined;
 
     if (user.role === "vendor") {
       const vendor = await Vendor.findOne({ user: user._id });
@@ -144,10 +138,6 @@ export const login = async (req: Request, res: Response) => {
         vendorId = vendor._id.toString();
       }
     }
-
-    /* ---------------------------------------------------------
-       CREATE JWT TOKEN
-    --------------------------------------------------------- */
 
     const token = jwt.sign(
       {
@@ -159,15 +149,7 @@ export const login = async (req: Request, res: Response) => {
       { expiresIn: "1d" }
     );
 
-    /* ---------------------------------------------------------
-       SET AUTH COOKIE
-    --------------------------------------------------------- */
-
     res.cookie(COOKIE_NAME, token, cookieOptions);
-
-    /* ---------------------------------------------------------
-       RESPONSE
-    --------------------------------------------------------- */
 
     return res.status(200).json({
       success: true,
@@ -180,6 +162,7 @@ export const login = async (req: Request, res: Response) => {
         vendorId,
       },
     });
+
   } catch (error) {
     console.error("Login error:", error);
 
@@ -196,6 +179,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const getCurrentUser = async (req: Request, res: Response) => {
   try {
+
     const user = (req as any).user;
 
     if (!user) {
@@ -209,13 +193,16 @@ export const getCurrentUser = async (req: Request, res: Response) => {
       success: true,
       user,
     });
+
   } catch (error) {
+
     console.error("Get current user error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Server error",
     });
+
   }
 };
 
@@ -224,10 +211,12 @@ export const getCurrentUser = async (req: Request, res: Response) => {
 ============================================================ */
 
 export const logout = (_req: Request, res: Response) => {
+
   res.clearCookie(COOKIE_NAME, { path: "/" });
 
   return res.status(200).json({
     success: true,
     message: "Logged out successfully",
   });
+
 };
