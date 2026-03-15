@@ -171,4 +171,15 @@ Build in this order — this is the first complete loop:
 
 ---
 
+## 12. Claude Session Rules (MANDATORY)
+
+- NEVER run npm, npx, tsc, or any build commands
+- NEVER run git commands  
+- Edit and create files ONLY
+- One file at a time
+- After editing each file, stop and summarise what was changed
+- Do NOT verify changes by compiling
+
+---
+
 *Version 2.0 | Confidential | Noshtio Platform*
