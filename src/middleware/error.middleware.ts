@@ -14,4 +14,7 @@ export const errorMiddleware = (
   });
 };
 
+export const errorHandler = errorMiddleware;
+
 export default errorMiddleware;
+

@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { ImageAnnotatorClient } from "@google-cloud/vision";
 import { VendorMenuDraft } from "../models/VendorMenuDraft.model";
-import { requireAuth } from "../middleware/requireAuth";
+import { requireAuth } from "../middleware/auth.middleware";
 
 const visionClient = new ImageAnnotatorClient(); 
 const router = Router();

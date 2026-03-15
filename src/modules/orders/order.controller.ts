@@ -1,204 +1,207 @@
-import { Request, Response } from "express";
-import * as OrderService from "./order.service";
-import { OrderStatus } from "./order.model";
+import { Request, Response } from 'express';
+import { asyncHandler } from '@/utils/asyncHandler';
+import {
+  validateAndCreate,
+  getOrderById,
+  listOrders,
+  updateStatus,
+  cancelOrder,
+  getVendorOrdersSummary,
+} from './order.service';
 
 /* ============================================================
-   HELPERS (MVP CANONICAL)
+   CREATE ORDER HANDLER
+   POST /api/orders/
+   - Guest or logged-in customers can place orders
+   - Validates items exist + recalculates price
 ============================================================ */
 
-/**
- * Vendor identity is resolved ONLY from auth middleware.
- * tenantId === vendorId (MVP rule)
- */
-const getVendorId = (req: Request): string => {
-  const vendorId = (req as any).user?.tenantId;
-  if (!vendorId) {
-    throw new Error("Vendor context missing");
-  }
-  return vendorId;
-};
+export const createOrderHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { vendorId, items, totalAmount, tableId, specialNote } = req.body;
 
-/* ============================================================
-   ALLOWED ORDER STATUSES (CANONICAL)
-============================================================ */
-
-const VALID_ORDER_STATUSES: OrderStatus[] = [
-  "NEW",
-  "PREPARING",
-  "READY",
-  "COMPLETED",
-  "CANCELLED",
-];
-
-/* ============================================================
-   CREATE ORDER (MVP MINIMAL)
-============================================================ */
-
-export const createOrderHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const vendorId = getVendorId(req);
-    const { totalAmount } = req.body;
-
-    if (typeof totalAmount !== "number") {
+    // Validate input
+    if (!vendorId || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
-        message: "totalAmount is required",
+        success: false,
+        message: 'vendorId and items array required',
       });
     }
 
-    const order = await OrderService.createOrder({
+    if (typeof totalAmount !== 'number' || totalAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'totalAmount must be a positive number',
+      });
+    }
+
+    const customerId = (req as any).user?.id ?? null;
+
+    const order = await validateAndCreate({
       vendorId,
+      customerId,
+      items,
       totalAmount,
+      tableId,
+      specialNote,
     });
 
-    return res.status(201).json({ data: order });
-  } catch (e: any) {
-    return res.status(400).json({
-      message: e?.message ?? "Failed to create order",
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      data: order,
     });
   }
-};
+);
 
 /* ============================================================
-   GET ORDER (READ-ONLY / POLLING SAFE)
+   GET ORDER HANDLER
+   GET /api/orders/:id
+   - Guest or logged-in can view order status
 ============================================================ */
 
-export const getOrderHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const order = await OrderService.getOrderById(
-      req.params.id
-    );
+export const getOrderHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID required',
+      });
+    }
+
+    const order = await getOrderById(id);
 
     if (!order) {
       return res.status(404).json({
-        message: "Order not found",
+        success: false,
+        message: 'Order not found',
       });
     }
 
-    return res.json({ data: order });
-  } catch (e: any) {
-    return res.status(400).json({
-      message: e?.message ?? "Failed to fetch order",
+    res.json({
+      success: true,
+      data: order,
     });
   }
-};
+);
 
 /* ============================================================
-   LIST ORDERS (VENDOR CONTEXT)
+   LIST ORDERS HANDLER
+   GET /api/orders/
+   - Logged-in only: customers see their orders
+   - Staff/Admin: filter by vendor (not implemented yet)
 ============================================================ */
 
-export const listOrdersHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const vendorId = getVendorId(req);
-    const status =
-      req.query.status as OrderStatus | undefined;
+export const listOrdersHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
 
-    const orders = await OrderService.listOrders({
-      vendorId,
-      status,
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const orders = await listOrders({
+      customerId: userId,
     });
 
-    return res.json({ data: orders });
-  } catch (e: any) {
-    return res.status(400).json({
-      message: e?.message ?? "Failed to list orders",
+    res.json({
+      success: true,
+      data: orders,
     });
   }
-};
+);
 
 /* ============================================================
-   UPDATE ORDER STATUS (STRICT LINEAR FLOW)
+   UPDATE ORDER STATUS HANDLER
+   PATCH /api/orders/:id/status
+   - Staff/Admin only for now
+   - Validates status transition
 ============================================================ */
 
-export const updateOrderStatusHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const status = req.body.status as OrderStatus;
+export const updateOrderStatusHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID required',
+      });
+    }
 
     if (!status) {
       return res.status(400).json({
-        message: "Status is required",
+        success: false,
+        message: 'Status required',
       });
     }
 
-    if (!VALID_ORDER_STATUSES.includes(status)) {
+    const order = await updateStatus(id, status);
+
+    res.json({
+      success: true,
+      message: 'Order status updated',
+      data: order,
+    });
+  }
+);
+
+/* ============================================================
+   CANCEL ORDER HANDLER
+   POST /api/orders/:id/cancel
+   - Logged-in customers can cancel NEW orders
+============================================================ */
+
+export const cancelOrderHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    if (!id) {
       return res.status(400).json({
-        message: "Invalid order status",
+        success: false,
+        message: 'Order ID required',
       });
     }
 
-    const order = await OrderService.updateOrderStatus(
-      req.params.id,
-      status
-    );
+    const order = await cancelOrder(id);
 
-    return res.json({ data: order });
-  } catch (e: any) {
-    return res.status(400).json({
-      message:
-        e?.message ?? "Failed to update order status",
+    res.json({
+      success: true,
+      message: 'Order cancelled successfully',
+      data: order,
     });
   }
-};
+);
 
 /* ============================================================
-   CANCEL ORDER
+   VENDOR ORDERS SUMMARY HANDLER
+   GET /api/vendor/orders/summary
+   - Vendor dashboard: daily orders, revenue, pending count
 ============================================================ */
 
-export const cancelOrderHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const order = await OrderService.cancelOrder(
-      req.params.id
-    );
-    return res.json({ data: order });
-  } catch (e: any) {
-    return res.status(400).json({
-      message:
-        e?.message ?? "Failed to cancel order",
+export const vendorOrdersSummaryHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const vendorId = (req as any).user?.vendorId;
+
+    if (!vendorId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Vendor context required',
+      });
+    }
+
+    const summary = await getVendorOrdersSummary(vendorId);
+
+    res.json({
+      success: true,
+      data: summary,
     });
   }
-};
+);
 
-/* ============================================================
-   VENDOR DASHBOARD — ORDERS SUMMARY
-============================================================ */
-/**
- * GET /vendor/orders/summary
- * Used by Vendor Dashboard home
- */
-export const vendorOrdersSummaryHandler = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    const vendorId = getVendorId(req);
-
-    const summary =
-      await OrderService.getVendorOrdersSummary(
-        vendorId
-      );
-
-    return res.json(summary);
-  } catch (err) {
-    console.error(
-      "vendorOrdersSummaryHandler error:",
-      err
-    );
-    return res.status(500).json({
-      message: "Failed to load orders summary",
-    });
-  }
-};

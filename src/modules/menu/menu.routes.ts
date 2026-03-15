@@ -1,11 +1,13 @@
 ﻿import { Router } from "express";
 import multer from "multer";
 
-import { authenticate } from "../../middleware/auth.middleware";
+// ✅ requireAuth — the actual exported name from auth.middleware.ts
+import { requireAuth } from "../../middleware/auth.middleware";
 
 import {
   uploadMenuController,
   getCurrentMenuSnapshot,
+  commitMenuDraftController,
 } from "../../controllers/menu.upload.controller";
 
 import { getDraftSnapshot } from "./menu.controller";
@@ -19,7 +21,15 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024, // 10 MB
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only JPEG, PNG and WEBP images are allowed"));
+    }
   },
 });
 
@@ -27,32 +37,33 @@ const upload = multer({
    MENU ROUTES
 ============================================================ */
 
-/**
- * Upload menu image
- */
+// POST /api/menu/upload — upload menu image, run OCR
 router.post(
   "/upload",
-  authenticate,
+  requireAuth,
   upload.single("menu"),
   uploadMenuController
 );
 
-/**
- * Get latest draft snapshot
- */
+// GET /api/menu/current — latest published snapshot for this vendor
 router.get(
   "/current",
-  authenticate,
+  requireAuth,
   getCurrentMenuSnapshot
 );
 
-/**
- * Get draft snapshot by ID
- */
+// GET /api/menu/draft/:snapshotId — read a specific draft by ID
 router.get(
   "/draft/:snapshotId",
-  authenticate,
+  requireAuth,
   getDraftSnapshot
+);
+
+// POST /api/menu/commit/:snapshotId — publish draft as live menu items
+router.post(
+  "/commit/:snapshotId",
+  requireAuth,
+  commitMenuDraftController
 );
 
 export default router;

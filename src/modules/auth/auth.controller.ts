@@ -10,18 +10,31 @@ import Vendor from "../../models/Vendor.model";
 ============================================================ */
 
 const COOKIE_NAME = "auth_token";
-
-/* ============================================================
-   COOKIE OPTIONS
-============================================================ */
+const JWT_EXPIRY = "7d";
 
 const cookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 24 * 60 * 60 * 1000,
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days — matches JWT expiry
 };
+
+/* ============================================================
+   HELPERS
+============================================================ */
+
+function buildTokenPayload(
+  userId: string,
+  role: string,
+  vendorId?: string
+) {
+  return { id: userId, role, vendorId };
+}
+
+function missingFields(res: Response, ...fields: (string | undefined)[]) {
+  return fields.some((f) => !f);
+}
 
 /* ============================================================
    REGISTER
@@ -34,36 +47,37 @@ export const register = async (req: Request, res: Response) => {
     if (!name || !email || !password || !role) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields",
+        message: "name, email, password and role are all required",
       });
     }
 
-    const existingUser = await User.findOne({ email }).lean();
+    const emailLower = email.toLowerCase().trim();
 
+    const existingUser = await User.findOne({ email: emailLower }).lean();
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
-        message: "User already exists",
+        message: "An account with this email already exists",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const newUser = await User.create({
-      name,
-      email,
+      name: name.trim(),
+      email: emailLower,
       password: hashedPassword,
       role,
     });
 
+    // Auto-create Vendor record for vendor registrations
     if (role === "vendor") {
       const vendorExists = await Vendor.findOne({ user: newUser._id });
-
       if (!vendorExists) {
         await Vendor.create({
           user: newUser._id,
-          name,
-          email,
+          name: name.trim(),
+          email: emailLower,
           status: "ACTIVE",
         });
       }
@@ -71,16 +85,11 @@ export const register = async (req: Request, res: Response) => {
 
     return res.status(201).json({
       success: true,
-      message: "User registered successfully",
+      message: "Account created successfully",
     });
-
   } catch (error) {
-    console.error("Register error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    console.error("[register]", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -90,7 +99,6 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -100,54 +108,43 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    const user = await User.findOne({ email });
-
-    if (!user || !user.password) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
-    const passwordMatch = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials",
-      });
-    }
-
     const JWT_SECRET = process.env.JWT_SECRET;
-
     if (!JWT_SECRET) {
-      console.error("JWT_SECRET missing");
-
+      console.error("[login] JWT_SECRET is not set");
       return res.status(500).json({
         success: false,
         message: "Server configuration error",
       });
     }
 
-    let vendorId: string | undefined;
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-    if (user.role === "vendor") {
-      const vendor = await Vendor.findOne({ user: user._id });
-
-      if (vendor) {
-        vendorId = vendor._id.toString();
-      }
+    // Use same message for missing user and wrong password
+    // to avoid user enumeration
+    if (!user || !user.password) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
     }
 
-    const token = jwt.sign(
-      {
-        userId: user._id.toString(),
-        vendorId,
-        role: user.role,
-      },
-      JWT_SECRET,
-      { expiresIn: "1d" }
-    );
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    // Fetch vendorId if applicable
+    let vendorId: string | undefined;
+    if (user.role === "vendor") {
+      const vendor = await Vendor.findOne({ user: user._id }).lean();
+      if (vendor) vendorId = vendor._id.toString();
+    }
+
+    const payload = buildTokenPayload(user._id.toString(), user.role, vendorId);
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 
     res.cookie(COOKIE_NAME, token, cookieOptions);
 
@@ -162,14 +159,9 @@ export const login = async (req: Request, res: Response) => {
         vendorId,
       },
     });
-
   } catch (error) {
-    console.error("Login error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    console.error("[login]", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -179,30 +171,29 @@ export const login = async (req: Request, res: Response) => {
 
 export const getCurrentUser = async (req: Request, res: Response) => {
   try {
-
-    const user = (req as any).user;
-
-    if (!user) {
+    if (!req.user) {
       return res.status(401).json({
         success: false,
         message: "Not authenticated",
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      user,
-    });
+    // Re-fetch from DB so the response always has fresh data
+    const user = await User.findById(req.user.id)
+      .select("-password")
+      .lean();
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({ success: true, user });
   } catch (error) {
-
-    console.error("Get current user error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-
+    console.error("[getCurrentUser]", error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -211,12 +202,9 @@ export const getCurrentUser = async (req: Request, res: Response) => {
 ============================================================ */
 
 export const logout = (_req: Request, res: Response) => {
-
   res.clearCookie(COOKIE_NAME, { path: "/" });
-
   return res.status(200).json({
     success: true,
     message: "Logged out successfully",
   });
-
 };

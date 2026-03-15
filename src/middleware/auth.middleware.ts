@@ -1,126 +1,91 @@
-import { Request, Response, NextFunction } from "express";
-import jwt from "jsonwebtoken";
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { AppError } from '@/utils/AppError';
 
-/* ============================================================
-   AUTH USER TYPE (BACKWARD COMPATIBLE)
-============================================================ */
-
-export interface AuthUser {
+export interface AuthPayload {
   id: string;
+  email: string;
   role: string;
-  userId?: string;
   vendorId?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
-  user?: AuthUser;
+  user?: AuthPayload;
 }
 
-/* ============================================================
-   JWT PAYLOAD
-============================================================ */
-
-interface JwtPayload {
-  userId: string;
-  vendorId?: string;
-  role: string;
+declare global {
+  namespace Express {
+    interface Request {
+      user?: AuthPayload;
+    }
+  }
 }
 
-/* ============================================================
-   TOKEN EXTRACTOR
-============================================================ */
+// ── Core JWT verification ──────────────────────────────────────────────────
 
-const extractToken = (req: Request): string | null => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      return authHeader.split(" ")[1];
-    }
-
-    const cookies = (req as any).cookies;
-
-    if (cookies?.auth_token) {
-      return cookies.auth_token;
-    }
-
-    return null;
-  } catch {
-    return null;
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return next(new AppError('Authentication required', 401));
   }
-};
-
-/* ============================================================
-   VERIFY TOKEN
-============================================================ */
-
-const verifyToken = (token: string): JwtPayload | null => {
+  const token = header.split(' ')[1];
   try {
-    const secret = process.env.JWT_SECRET;
-
-    if (!secret) return null;
-
-    return jwt.verify(token, secret) as JwtPayload;
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as AuthPayload;
+    req.user = payload;
+    next();
   } catch {
-    return null;
+    return next(new AppError('Invalid or expired token', 401));
   }
-};
+}
 
-/* ============================================================
-   ATTACH USER
-============================================================ */
+// ── Role guard ─────────────────────────────────────────────────────────────
 
-const attachUser = (req: AuthenticatedRequest): boolean => {
-  const token = extractToken(req);
-
-  if (!token) return false;
-
-  const decoded = verifyToken(token);
-
-  if (!decoded) return false;
-
-  req.user = {
-    id: decoded.userId,
-    userId: decoded.userId,
-    vendorId: decoded.vendorId,
-    role: decoded.role,
+export function requireRole(roles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return next(new AppError('Authentication required', 401));
+    if (!roles.includes(req.user.role)) {
+      return next(new AppError('Insufficient permissions', 403));
+    }
+    next();
   };
+}
 
-  return true;
-};
+// ── Vendor ownership guard ─────────────────────────────────────────────────
+// Ensures the authenticated user belongs to the vendor being accessed.
 
-/* ============================================================
-   STRICT AUTH
-============================================================ */
+export function requireVendorOwnership(
+  getVendorId: (req: Request) => string
+) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return next(new AppError('Authentication required', 401));
+    const targetVendorId = getVendorId(req);
+    if (
+      req.user.role !== 'super_admin' &&
+      req.user.vendorId !== targetVendorId
+    ) {
+      return next(new AppError('Access denied to this vendor', 403));
+    }
+    next();
+  };
+}
 
-export const authenticate = (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  const ok = attachUser(req);
+// ── Optional auth (for public routes that benefit from user context) ───────
 
-  if (!ok) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized",
-    });
+export function optionalAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return next();
+  const token = header.split(' ')[1];
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET!) as AuthPayload;
+  } catch {
+    // Ignore invalid token on optional routes
   }
-
   next();
-};
+}
 
-/* ============================================================
-   OPTIONAL AUTH
-============================================================ */
+// ── Aliases for compatibility ──────────────────────────────────────────────
 
-export const optionalAuth = (
-  req: AuthenticatedRequest,
-  _res: Response,
-  next: NextFunction
-) => {
-  attachUser(req);
-  next();
-};
+export const authenticate = requireAuth;
 
-export default authenticate;
+// ── Default export (for routes that use "import authMiddleware")
+export default requireAuth;

@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import MenuDraftSnapshot from "../modules/menu/menu.snapshot.model";
 import { handleImageOcrUpload } from "../modules/menu/ocr.service";
 import MenuParser from "../modules/menu/menu.parser";
+import MenuCommitService from "../modules/menu/menu.commit.service";
 import Vendor from "../models/Vendor.model";
 
 /* ============================================================
@@ -136,6 +137,93 @@ export const getCurrentMenuSnapshot = async (
     return res.status(500).json({
       success: false,
       message: "Failed to load menu snapshot",
+    });
+  }
+};
+
+/* ============================================================
+   COMMIT DRAFT SNAPSHOT → LIVE MENU ITEMS
+   Publishes OCR'd menu items to the Item model (goes LIVE)
+============================================================ */
+export const commitMenuDraftController = async (
+  req: Request & { user?: { id: string } },
+  res: Response
+) => {
+  try {
+    /* 1️⃣ SNAPSHOT ID & AUTH VALIDATION */
+    const { snapshotId } = req.params;
+    const userId = req.user?.id;
+
+    if (!snapshotId) {
+      return res.status(400).json({
+        success: false,
+        message: "Snapshot ID is required",
+      });
+    }
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    /* 2️⃣ VENDOR OWNERSHIP VALIDATION */
+    const vendor = await Vendor.findOne({ user: userId });
+    if (!vendor) {
+      return res.status(403).json({
+        success: false,
+        message: "Vendor profile not found",
+      });
+    }
+
+    /* 3️⃣ SNAPSHOT OWNERSHIP VALIDATION */
+    const snapshot = await MenuDraftSnapshot.findById(snapshotId);
+    if (!snapshot) {
+      return res.status(404).json({
+        success: false,
+        message: "Draft snapshot not found",
+      });
+    }
+
+    // Verify this snapshot belongs to this vendor
+    if (snapshot.restaurantId.toString() !== vendor._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not own this menu draft",
+      });
+    }
+
+    // Prevent double-committing
+    if (snapshot.status === "COMMITTED") {
+      return res.status(400).json({
+        success: false,
+        message: "This menu has already been published",
+      });
+    }
+
+    /* 4️⃣ COMMIT THE DRAFT → LIVE ITEMS */
+    const result = await MenuCommitService.commitMapping({
+      restaurantId: vendor._id.toString(),
+      snapshotId,
+      committedBy: userId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Menu published successfully",
+      data: {
+        snapshotId,
+        itemsCreated: result.itemsCreated,
+        itemsUpdated: result.itemsUpdated,
+        totalItems: result.itemsCreated + result.itemsUpdated,
+      },
+    });
+  } catch (err: any) {
+    console.error("MENU COMMIT ERROR:", err);
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Failed to publish menu",
     });
   }
 };
