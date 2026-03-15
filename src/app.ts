@@ -17,6 +17,9 @@ import qrRoutes from "./modules/menu/qr.routes";
 // Vendor
 import vendorRoutes from "./modules/vendor/vendor.routes";
 
+// Customer
+import customerRoutes from "./modules/customer/customer.routes";
+
 // Orders
 import vendorOrdersRoutes from "./routes/vendorOrders.routes";
 import orderRoutes from "./modules/orders/order.routes";
@@ -127,6 +130,13 @@ app.use("/api/vendor/kitchen", kitchenRoutes);
 
 // Place order, get order status  ← NEW (Module 5)
 app.use("/api/orders", orderRoutes);
+
+/* ============================================================
+   CUSTOMER PROFILE ROUTES  (require JWT + customer role)
+============================================================ */
+
+// Customer profile management
+app.use("/api/customers", customerRoutes);
 
 /* ============================================================
    FALLBACK — 404

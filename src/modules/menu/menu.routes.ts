@@ -11,6 +11,7 @@ import {
 } from "../../controllers/menu.upload.controller";
 
 import { getDraftSnapshot } from "./menu.controller";
+import { getCustomerMenuHandler } from "./menu.customer.controller";
 
 const router = Router();
 
@@ -65,5 +66,8 @@ router.post(
   requireAuth,
   commitMenuDraftController
 );
+
+// GET /api/menu?vendorId=XXX — customer browsing menu (PUBLIC)
+router.get("/", getCustomerMenuHandler);
 
 export default router;
