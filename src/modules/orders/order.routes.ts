@@ -1,8 +1,10 @@
 import express from "express";
 import {
-  createOrderHandler,
-  getOrderHandler,
-  listOrdersHandler,
+  placeOrderHandler,
+  getOrderStatusHandler,
+  listCustomerOrdersHandler,
+} from "./order.placement.controller";
+import {
   updateOrderStatusHandler,
   cancelOrderHandler,
 } from "./order.controller";
@@ -10,30 +12,27 @@ import {
 import authMiddleware, {
   optionalAuth,
 } from "../../middleware/auth.middleware";
-import roleMiddleware from "../../middleware/role.middleware";
 
 const router = express.Router();
 
-/**
- * Customer Order APIs
- * Mounted at: /api/customer/orders
- */
+/* ============================================================
+   CUSTOMER ORDER APIS
+   Mounted at: /api/orders
+============================================================ */
 
-// ✅ GUEST + LOGGED-IN
-router.post("/", optionalAuth, createOrderHandler);
-router.get("/:id", optionalAuth, getOrderHandler);
+// POST /api/orders — place new order (guest + logged-in)
+router.post("/", optionalAuth, placeOrderHandler);
 
-// ✅ LOGGED-IN ONLY
-router.get("/", authMiddleware, listOrdersHandler);
+// GET /api/orders/:orderId — view order status (guest + logged-in)
+router.get("/:orderId", optionalAuth, getOrderStatusHandler);
 
-// ✅ STAFF / ADMIN
-router.patch(
-  "/:id/status",
-  authMiddleware,
-  roleMiddleware("staff", "admin"),
-  updateOrderStatusHandler
-);
+// GET /api/orders/customer/my-orders — list customer's orders (logged-in only)
+router.get("/customer/my-orders", authMiddleware, listCustomerOrdersHandler);
 
+// PATCH /api/orders/:id/status — update order status (vendor staff only)
+router.patch("/:id/status", authMiddleware, updateOrderStatusHandler);
+
+// POST /api/orders/:id/cancel — cancel order
 router.post("/:id/cancel", authMiddleware, cancelOrderHandler);
 
 export default router;
