@@ -25,6 +25,9 @@ import vendorOrdersRoutes from "./routes/vendorOrders.routes";
 import orderRoutes from "./modules/orders/order.routes";
 import kitchenRoutes from "./modules/orders/order.kitchen.routes";
 
+// Payments
+import paymentRoutes from "./modules/payments/payment.routes";
+
 // Analytics
 import vendorAnalyticsRoutes from "./modules/menu/analytics/analytics.routes";
 
@@ -137,6 +140,13 @@ app.use("/api/orders", orderRoutes);
 
 // Customer profile management
 app.use("/api/customers", customerRoutes);
+
+/* ============================================================
+   PAYMENT ROUTES  (Razorpay integration)
+============================================================ */
+
+// Payment creation, verification, and refunds
+app.use("/api/payments", paymentRoutes);
 
 /* ============================================================
    FALLBACK — 404

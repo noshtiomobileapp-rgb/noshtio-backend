@@ -171,14 +171,16 @@ Build in this order — this is the first complete loop:
 
 ---
 
-## 12. Claude Session Rules (MANDATORY)
+## 12. Claude Session Rules (MANDATORY — READ BEFORE EVERY TASK)
 
-- NEVER run npm, npx, tsc, or any build commands
-- NEVER run git commands  
-- Edit and create files ONLY
-- One file at a time
-- After editing each file, stop and summarise what was changed
-- Do NOT verify changes by compiling
+- NEVER run npm, npx, tsc, node, or ANY terminal commands
+- NEVER run git commands
+- NEVER run build, compile, or verify commands
+- NEVER use the terminal AT ALL — not even to check files
+- Edit and create files ONLY using the file editor
+- Fix ONE file per message, then STOP and wait for instruction
+- After editing, just show me the changed lines — do not verify
+- If you feel the urge to run a command — DON'T. Just edit the file.
 
 ---
 

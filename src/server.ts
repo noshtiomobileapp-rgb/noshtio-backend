@@ -13,7 +13,7 @@ import logger from "./logger";
 import { seedRoles } from "./rbac/seed.roles";
 
 /* ============================================================
-   🔥 FORCE MODEL REGISTRATION (DO NOT REMOVE)
+   FORCE MODEL REGISTRATION (DO NOT REMOVE)
 ============================================================ */
 import "./modules/orders/order.model";
 import "./modules/menu/menu.model";
@@ -43,7 +43,6 @@ async function startServer() {
   try {
     await connectDB();
     await seedRoles();
-
     app.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(

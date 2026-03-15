@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Customer, { ICustomer } from "../models/Customer.model";
+import Customer, { ICustomer } from "../../models/Customer.model";
 
 /* ============================================================
    CUSTOMER PROFILE SERVICE
